@@ -19,6 +19,12 @@ Standalone CLI for configuring git repos — hooks, .gitignore, and .gitattribut
 curl -fsSL https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.sh | sh
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.ps1 | iex
+```
+
 ### Via cargo
 
 ```bash
@@ -50,7 +56,7 @@ gitkit hooks init pre-push "cargo test"
 gitkit hooks list
 
 # Generate a .gitignore
-gitkit ignore add rust macos
+gitkit ignore add rust,vscode
 
 # Apply line endings preset
 gitkit attributes init
@@ -67,8 +73,9 @@ gitkit attributes init
 | `gitkit hooks remove <hook>` | Remove a hook |
 | `gitkit hooks show <hook>` | Show hook content |
 | `gitkit ignore add <templates>` | Generate .gitignore via gitignore.io |
-| `gitkit ignore list` | List available templates |
+| `gitkit ignore list [filter]` | List available templates |
 | `gitkit attributes init` | Apply line endings preset |
+| `gitkit config apply <preset>` | Apply git config preset (defaults, advanced, delta) |
 
 ---
 
