@@ -1,0 +1,18 @@
+[package]
+name = "gitkit"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone CLI for configuring git repos — hooks, .gitignore, and .gitattributes"
+license = "MIT"
+repository = "https://github.com/JheisonMB/gitkit"
+keywords = ["git", "hooks", "cli", "gitignore", "gitattributes"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "gitkit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ureq = "2"
