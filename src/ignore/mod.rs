@@ -35,12 +35,16 @@ pub fn run(cmd: IgnoreCommand) -> Result<()> {
     }
 }
 
-fn add(templates: &str, _yes: bool, _force: bool, dry_run: bool) -> Result<()> {
+fn add(templates: &str, _yes: bool, force: bool, dry_run: bool) -> Result<()> {
     let root = find_repo_root()?;
     let path = root.join(".gitignore");
 
     let new_content = resolve_templates(templates)?;
-    let merged = merge_gitignore(&path, &new_content);
+    let merged = if force {
+        new_content.clone()
+    } else {
+        merge_gitignore(&path, &new_content)
+    };
 
     if dry_run {
         println!("[dry-run] Would write .gitignore:\n{merged}");
@@ -80,6 +84,12 @@ fn resolve_templates(templates: &str) -> Result<String> {
             .context("Failed to fetch gitignore templates")?
             .into_string()
             .context("Failed to read response")?;
+        if fetched.trim().is_empty() {
+            anyhow::bail!(
+                "No templates found for: {}. Run 'gitkit ignore list' to see available templates.",
+                joined
+            );
+        }
         output.push_str(&fetched);
     }
 

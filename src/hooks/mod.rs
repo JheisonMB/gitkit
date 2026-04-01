@@ -61,7 +61,29 @@ fn hook_script(target: &str) -> String {
     format!("#!/bin/sh\nset -e\n{target}\n")
 }
 
+const VALID_HOOKS: &[&str] = &[
+    "applypatch-msg",
+    "commit-msg",
+    "fsmonitor-watchman",
+    "post-update",
+    "pre-applypatch",
+    "pre-commit",
+    "pre-merge-commit",
+    "pre-push",
+    "pre-rebase",
+    "pre-receive",
+    "prepare-commit-msg",
+    "push-to-checkout",
+    "update",
+];
+
 fn init(hook: &str, target: &str, yes: bool, force: bool, dry_run: bool) -> Result<()> {
+    if !VALID_HOOKS.contains(&hook) {
+        anyhow::bail!(
+            "'{hook}' is not a valid git hook. Valid hooks: {}",
+            VALID_HOOKS.join(", ")
+        );
+    }
     let dir = hooks_dir()?;
     let path = dir.join(hook);
 

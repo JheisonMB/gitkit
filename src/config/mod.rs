@@ -122,6 +122,14 @@ fn delta_installed() -> bool {
 }
 
 fn install_delta() -> Result<()> {
+    anyhow::ensure!(
+        Command::new("cargo")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false),
+        "cargo not found in PATH — install Rust from https://rustup.rs to install git-delta"
+    );
     println!("Installing git-delta...");
     let status = Command::new("cargo")
         .args(["install", "git-delta"])

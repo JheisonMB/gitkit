@@ -29,9 +29,16 @@ pub fn run(cmd: AttributesCommand) -> Result<()> {
     let root = find_repo_root()?;
     let path = root.join(".gitattributes");
 
-    if path.exists() && !force && !confirm(".gitattributes already exists. Overwrite?", yes) {
-        println!("Aborted.");
-        return Ok(());
+    if path.exists() && !force {
+        if !confirm(".gitattributes already exists. Overwrite?", yes) {
+            println!("Aborted.");
+            return Ok(());
+        }
+        if !dry_run {
+            let backup = root.join(".gitattributes.bak");
+            std::fs::copy(&path, &backup).context("Failed to backup .gitattributes")?;
+            println!("Backed up to {}", backup.display());
+        }
     }
 
     if dry_run {
