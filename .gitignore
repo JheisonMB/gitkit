@@ -12,3 +12,9 @@ Cargo.lock
 .agents/
 .idea/
 skills-lock.json
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
