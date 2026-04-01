@@ -51,3 +51,45 @@ jobs:
 
       - name: Cargo test
         run: cargo test
+
+  publish-check:
+    name: Publish Check (dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cargo publish dry-run
+        run: cargo publish --dry-run
+
+  main-pr-checks:
+    name: Main PR Requirements
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version bump
+        run: |
+          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Version in Cargo.toml: $CURRENT_VERSION"
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "✅ First release (no previous tags)"
+          else
+            LAST_VERSION=${LAST_TAG#v}
+            echo "Last tag version: $LAST_VERSION"
+            if [ "$CURRENT_VERSION" = "$LAST_VERSION" ]; then
+              echo "❌ Version in Cargo.toml must be bumped for PRs to main"
+              exit 1
+            fi
+            echo "✅ Version bumped correctly"
+          fi
