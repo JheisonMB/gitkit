@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+use std::{fs, path::Path};
 
 use crate::utils::{confirm, find_repo_root};
 
@@ -166,6 +166,7 @@ fn show(hook: &str) -> Result<()> {
 
 #[cfg(unix)]
 fn set_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
     fs::set_permissions(path, perms).context("Failed to set executable permission")?;
