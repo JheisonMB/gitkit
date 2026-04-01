@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::fs;
 
-use crate::utils::{confirm, find_repo_root};
+use crate::utils::find_repo_root;
 
 const API_BASE: &str = "https://www.toptal.com/developers/gitignore/api";
 
@@ -35,24 +35,20 @@ pub fn run(cmd: IgnoreCommand) -> Result<()> {
     }
 }
 
-fn add(templates: &str, yes: bool, force: bool, dry_run: bool) -> Result<()> {
+fn add(templates: &str, _yes: bool, _force: bool, dry_run: bool) -> Result<()> {
     let root = find_repo_root()?;
     let path = root.join(".gitignore");
 
-    if path.exists() && !force && !confirm(".gitignore already exists. Overwrite?", yes) {
-        println!("Aborted.");
-        return Ok(());
-    }
-
-    let content = resolve_templates(templates)?;
+    let new_content = resolve_templates(templates)?;
+    let merged = merge_gitignore(&path, &new_content);
 
     if dry_run {
-        println!("[dry-run] Would write .gitignore:\n{content}");
+        println!("[dry-run] Would write .gitignore:\n{merged}");
         return Ok(());
     }
 
-    fs::write(&path, content).context("Failed to write .gitignore")?;
-    println!("Generated .gitignore for: {templates}");
+    fs::write(&path, merged).context("Failed to write .gitignore")?;
+    println!("Updated .gitignore for: {templates}");
     Ok(())
 }
 
@@ -111,6 +107,38 @@ fn list(filter: Option<&str>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Merge new gitignore content into existing file, skipping lines already present.
+/// Preserves existing content and appends only new non-duplicate lines.
+fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
+    let existing = if path.exists() {
+        fs::read_to_string(path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let existing_lines: std::collections::HashSet<&str> = existing.lines().collect();
+
+    let to_append: String = new_content
+        .lines()
+        .filter(|line| !existing_lines.contains(line))
+        .fold(String::new(), |mut acc, line| {
+            acc.push_str(line);
+            acc.push('\n');
+            acc
+        });
+
+    if to_append.trim().is_empty() {
+        return existing;
+    }
+
+    let mut result = existing;
+    if !result.ends_with('\n') && !result.is_empty() {
+        result.push('\n');
+    }
+    result.push_str(&to_append);
+    result
 }
 
 mod builtins {
