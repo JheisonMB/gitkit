@@ -156,6 +156,67 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
     result
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn tmp_gitignore(content: &str) -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, content).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn merge_gitignore_appends_new_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_skips_duplicate_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n*.log\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result.matches("*.log").count(), 1);
+    }
+
+    #[test]
+    fn merge_gitignore_keeps_comments_and_blank_lines() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "# Rust\ntarget/\n*.pdb\n";
+        let result = merge_gitignore(&path, new);
+        // comment and blank lines from new content are always appended
+        assert!(result.contains("# Rust"));
+        assert!(result.contains("*.pdb"));
+    }
+
+    #[test]
+    fn merge_gitignore_returns_existing_when_nothing_new() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "target/\n");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_works_on_nonexistent_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result, "*.log\n");
+    }
+
+    #[test]
+    fn resolve_templates_returns_builtin_agentic() {
+        let result = resolve_templates("agentic").unwrap();
+        assert!(result.contains(".kiro/"));
+        assert!(result.contains(".cursor/"));
+    }
+}
+
 mod builtins {
     pub(super) const NAMES: &[&str] = &["agentic"];
 

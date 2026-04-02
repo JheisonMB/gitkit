@@ -217,3 +217,54 @@ fn set_executable(path: &Path) -> Result<()> {
 fn set_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_hook_returns_builtin_script() {
+        let (hook, script) = resolve_hook("conventional-commits", None).unwrap();
+        assert_eq!(hook, "commit-msg");
+        assert!(script.contains("#!/bin/sh"));
+        assert!(script.contains("Conventional Commits"));
+    }
+
+    #[test]
+    fn resolve_hook_infers_correct_hook_for_no_secrets() {
+        let (hook, _) = resolve_hook("no-secrets", None).unwrap();
+        assert_eq!(hook, "pre-commit");
+    }
+
+    #[test]
+    fn resolve_hook_infers_correct_hook_for_branch_naming() {
+        let (hook, _) = resolve_hook("branch-naming", None).unwrap();
+        assert_eq!(hook, "pre-commit");
+    }
+
+    #[test]
+    fn resolve_hook_errors_when_builtin_given_command() {
+        let err = resolve_hook("conventional-commits", Some("echo hi")).unwrap_err();
+        assert!(err.to_string().contains("built-in"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_command_wraps_in_shebang() {
+        let (hook, script) = resolve_hook("pre-push", Some("cargo test")).unwrap();
+        assert_eq!(hook, "pre-push");
+        assert!(script.starts_with("#!/bin/sh"));
+        assert!(script.contains("cargo test"));
+    }
+
+    #[test]
+    fn resolve_hook_errors_on_invalid_hook_name() {
+        let err = resolve_hook("not-a-hook", Some("echo hi")).unwrap_err();
+        assert!(err.to_string().contains("not a valid git hook"));
+    }
+
+    #[test]
+    fn resolve_hook_errors_on_unknown_builtin_without_command() {
+        let err = resolve_hook("unknown-builtin", None).unwrap_err();
+        assert!(err.to_string().contains("not a built-in"));
+    }
+}

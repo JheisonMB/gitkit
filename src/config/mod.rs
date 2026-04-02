@@ -138,3 +138,25 @@ fn install_delta() -> Result<()> {
     anyhow::ensure!(status.success(), "cargo install git-delta failed");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_configs_dry_run_prints_without_running_git() {
+        // dry_run=true must not invoke git; if it did it would fail in CI without a repo
+        let result = apply_configs(DEFAULTS, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_configs_dry_run_covers_advanced_preset() {
+        assert!(apply_configs(ADVANCED, true).is_ok());
+    }
+
+    #[test]
+    fn apply_configs_dry_run_covers_delta_preset() {
+        assert!(apply_configs(DELTA_CONFIGS, true).is_ok());
+    }
+}
