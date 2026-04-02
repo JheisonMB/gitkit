@@ -1,10 +1,33 @@
-pub(super) fn get(name: &str) -> Option<&'static str> {
-    match name {
-        "conventional-commits" => Some(CONVENTIONAL_COMMITS),
-        "no-secrets" => Some(NO_SECRETS),
-        "branch-naming" => Some(BRANCH_NAMING),
-        _ => None,
-    }
+pub(super) struct Builtin {
+    pub name: &'static str,
+    pub hook: &'static str,
+    pub description: &'static str,
+    pub script: &'static str,
+}
+
+pub(super) const ALL: &[Builtin] = &[
+    Builtin {
+        name: "conventional-commits",
+        hook: "commit-msg",
+        description: "Validates Conventional Commits format",
+        script: CONVENTIONAL_COMMITS,
+    },
+    Builtin {
+        name: "no-secrets",
+        hook: "pre-commit",
+        description: "Detects common secret patterns in staged changes",
+        script: NO_SECRETS,
+    },
+    Builtin {
+        name: "branch-naming",
+        hook: "pre-commit",
+        description: "Validates branch name matches convention",
+        script: BRANCH_NAMING,
+    },
+];
+
+pub(super) fn get(name: &str) -> Option<&'static Builtin> {
+    ALL.iter().find(|b| b.name == name)
 }
 
 const CONVENTIONAL_COMMITS: &str = r#"#!/bin/sh
@@ -20,7 +43,7 @@ fi
 
 const NO_SECRETS: &str = r#"#!/bin/sh
 # Detects common secret patterns. Not exhaustive — use dedicated tools for production.
-patterns='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|ghp_[0-9A-Za-z]{36}|sk-[0-9A-Za-z]{48}|[0-9a-f]{40}|password\s*=\s*["\x27][^"\x27]{8,})'
+patterns='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|ghp_[0-9A-Za-z]{36}|sk-[0-9A-Za-z]{48}|password\s*=\s*["'"'"'][^"'"'"']{8,})'
 if git diff --cached --diff-filter=ACM | grep -qE "$patterns"; then
   echo "ERROR: Possible secret detected in staged changes."
   echo "Review your changes and remove any credentials before committing."
