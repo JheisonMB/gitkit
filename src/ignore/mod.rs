@@ -119,8 +119,8 @@ fn list(filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Merge new gitignore content into existing file, skipping lines already present.
-/// Preserves existing content and appends only new non-duplicate lines.
+/// Merge new gitignore content into existing file, skipping non-empty non-comment
+/// lines already present. Preserves existing content and appends only new entries.
 fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
     let existing = if path.exists() {
         fs::read_to_string(path).unwrap_or_default()
@@ -128,11 +128,16 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
         String::new()
     };
 
-    let existing_lines: std::collections::HashSet<&str> = existing.lines().collect();
+    let existing_patterns: std::collections::HashSet<&str> = existing
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
 
     let to_append: String = new_content
         .lines()
-        .filter(|line| !existing_lines.contains(line))
+        .filter(|line| {
+            line.is_empty() || line.starts_with('#') || !existing_patterns.contains(line)
+        })
         .fold(String::new(), |mut acc, line| {
             acc.push_str(line);
             acc.push('\n');
