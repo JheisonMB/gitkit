@@ -1,11 +1,23 @@
-# gitkit
+```
+           ███   █████    █████       ███   █████   
+          ░░░   ░░███    ░░███       ░░░   ░░███    
+  ███████ ████  ███████   ░███ █████ ████  ███████  
+ ███░░███░░███ ░░░███░    ░███░░███ ░░███ ░░░███░   
+░███ ░███ ░███   ░███     ░██████░   ░███   ░███    
+░███ ░███ ░███   ░███ ███ ░███░░███  ░███   ░███ ███
+░░███████ █████  ░░█████  ████ █████ █████  ░░█████ 
+ ░░░░░███░░░░░    ░░░░░  ░░░░ ░░░░░ ░░░░░    ░░░░░  
+ ███ ░███                                           
+░░██████                                            
+ ░░░░░░                                             
+```
 
 [![CI](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml)
 [![Release](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml)
 [![Crates.io](https://img.shields.io/crates/v/gitkit)](https://crates.io/crates/gitkit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Standalone CLI for configuring git repos — hooks, .gitignore, and .gitattributes. No Node.js, no Python, no runtime dependencies. One binary.
+Configure a git repo in seconds — hooks, `.gitignore`, `.gitattributes`, and git config. Interactive wizard or direct commands. No Node.js, no Python, no runtime dependencies. One binary.
 
 ---
 
@@ -31,61 +43,107 @@ irm https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.ps1 | iex
 cargo install gitkit
 ```
 
+Available on [crates.io](https://crates.io/crates/gitkit).
+
 ### GitHub Releases
 
 Check the [Releases](https://github.com/JheisonMB/gitkit/releases) page for precompiled binaries (Linux x86_64, macOS x86_64/ARM64, Windows x86_64).
 
 ### Uninstall
 
+**Linux / macOS:**
 ```bash
 rm -f ~/.local/bin/gitkit
 ```
 
+**Windows (PowerShell):**
+```powershell
+Remove-Item "$env:LOCALAPPDATA\gitkit\gitkit.exe" -Force
+```
+
 ---
 
-## Quick Start
+## Quick Start 
+
+Interactive wizard — guided setup for a new repo:
 
 ```bash
-# Install a built-in hook
-gitkit hooks init commit-msg conventional-commits
+gitkit init
+```
 
-# Install a custom hook command
-gitkit hooks init pre-push "cargo test"
+Or use commands directly:
 
-# List installed hooks
-gitkit hooks list
-
-# Generate a .gitignore
-gitkit ignore add rust,vscode
-
-# Apply line endings preset
+```bash
+gitkit hooks add conventional-commits
+gitkit ignore add rust,vscode,agentic
 gitkit attributes init
+gitkit config apply defaults
+```
+
+---
+
+## `gitkit init`
+
+Interactive wizard that guides you through configuring a repo step by step.
+
+- Hooks — built-ins pre-selected, or add a custom command
+- `.gitignore` — filterable search across all gitignore.io templates + built-ins
+- `.gitattributes` — line endings and binary file presets
+- Git config — 6 individual options, recommended ones pre-selected
+
+```
+gitkit init
 ```
 
 ---
 
 ## Commands
 
+### Hooks
+
 | Command | Description |
 |---|---|
-| `gitkit hooks init <hook> <builtin\|command>` | Install a hook (built-in or custom command) |
+| `gitkit hooks add <builtin>` | Install a built-in hook (hook name inferred) |
+| `gitkit hooks add <hook> <command>` | Install a custom shell command as a hook |
 | `gitkit hooks list` | List installed hooks |
-| `gitkit hooks remove <hook>` | Remove a hook |
-| `gitkit hooks show <hook>` | Show hook content |
-| `gitkit ignore add <templates>` | Generate .gitignore via gitignore.io |
+| `gitkit hooks list --available` | Show all built-in hooks with descriptions |
+| `gitkit hooks remove <hook>` | Remove an installed hook |
+| `gitkit hooks show <hook>` | Print hook content |
+
+### Ignore
+
+| Command | Description |
+|---|---|
+| `gitkit ignore add <templates>` | Generate/merge `.gitignore` via gitignore.io |
 | `gitkit ignore list [filter]` | List available templates |
-| `gitkit attributes init` | Apply line endings preset |
-| `gitkit config apply <preset>` | Apply git config preset (defaults, advanced, delta) |
+
+### Attributes
+
+| Command | Description |
+|---|---|
+| `gitkit attributes init` | Apply line endings preset to `.gitattributes` |
+
+### Config
+
+| Command | Description |
+|---|---|
+| `gitkit config apply defaults` | `push.autoSetupRemote`, `help.autocorrect`, `diff.algorithm` |
+| `gitkit config apply advanced` | `merge.conflictstyle zdiff3`, `rerere.enabled` |
+| `gitkit config apply delta` | `core.pager delta` (requires `cargo`) |
 
 ---
 
 ## Built-in Hooks
 
+Run `gitkit hooks list --available` to see these without leaving the terminal.
+
 | Name | Hook | Description |
 |---|---|---|
 | `conventional-commits` | `commit-msg` | Validates Conventional Commits format |
-| `no-secrets` | `pre-commit` | Detects common secret patterns |
-| `branch-naming` | `pre-commit` | Validates branch name pattern |
+| `no-secrets` | `pre-commit` | Detects common secret patterns in staged changes |
+| `branch-naming` | `pre-commit` | Validates branch name matches convention |
+
+Built-ins are embedded in the binary — no network required.
 
 ---
 
@@ -96,16 +154,6 @@ gitkit attributes init
 | `--yes`, `-y` | Skip confirmation prompts |
 | `--force`, `-f` | Overwrite existing files |
 | `--dry-run` | Preview changes without applying |
-
----
-
-## Tech Stack
-
-| Concern | Crate |
-|---|---|
-| CLI parsing | `clap` (derive) |
-| Error handling | `anyhow` |
-| HTTP client | `ureq` |
 
 ---
 

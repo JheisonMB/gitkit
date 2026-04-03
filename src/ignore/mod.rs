@@ -35,6 +35,33 @@ pub fn run(cmd: IgnoreCommand) -> Result<()> {
     }
 }
 
+/// Add templates merging into existing .gitignore. Used by the interactive wizard (silent).
+pub(crate) fn add_templates(templates: &str, force: bool) -> Result<()> {
+    let root = find_repo_root()?;
+    let path = root.join(".gitignore");
+    let new_content = resolve_templates(templates)?;
+    let merged = if force {
+        new_content
+    } else {
+        merge_gitignore(&path, &new_content)
+    };
+    fs::write(&path, merged).context("Failed to write .gitignore")?;
+    Ok(())
+}
+
+/// Fetch template names from the API for the search prompt.
+pub(crate) fn fetch_template_list() -> Result<Vec<String>> {
+    let url = format!("{API_BASE}/list?format=lines");
+    let content = ureq::get(&url)
+        .call()
+        .context("Failed to fetch template list")?
+        .into_string()
+        .context("Failed to read response")?;
+    let mut names: Vec<String> = builtins::NAMES.iter().map(|s| s.to_string()).collect();
+    names.extend(content.lines().map(|l| l.to_string()));
+    Ok(names)
+}
+
 fn add(templates: &str, _yes: bool, force: bool, dry_run: bool) -> Result<()> {
     let root = find_repo_root()?;
     let path = root.join(".gitignore");
@@ -119,8 +146,8 @@ fn list(filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Merge new gitignore content into existing file, skipping lines already present.
-/// Preserves existing content and appends only new non-duplicate lines.
+/// Merge new gitignore content into existing file, skipping non-empty non-comment
+/// lines already present. Preserves existing content and appends only new entries.
 fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
     let existing = if path.exists() {
         fs::read_to_string(path).unwrap_or_default()
@@ -128,11 +155,16 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
         String::new()
     };
 
-    let existing_lines: std::collections::HashSet<&str> = existing.lines().collect();
+    let existing_patterns: std::collections::HashSet<&str> = existing
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
 
     let to_append: String = new_content
         .lines()
-        .filter(|line| !existing_lines.contains(line))
+        .filter(|line| {
+            line.is_empty() || line.starts_with('#') || !existing_patterns.contains(line)
+        })
         .fold(String::new(), |mut acc, line| {
             acc.push_str(line);
             acc.push('\n');
@@ -151,6 +183,67 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
     result
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn tmp_gitignore(content: &str) -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, content).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn merge_gitignore_appends_new_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_skips_duplicate_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n*.log\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result.matches("*.log").count(), 1);
+    }
+
+    #[test]
+    fn merge_gitignore_keeps_comments_and_blank_lines() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "# Rust\ntarget/\n*.pdb\n";
+        let result = merge_gitignore(&path, new);
+        // comment and blank lines from new content are always appended
+        assert!(result.contains("# Rust"));
+        assert!(result.contains("*.pdb"));
+    }
+
+    #[test]
+    fn merge_gitignore_returns_existing_when_nothing_new() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "target/\n");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_works_on_nonexistent_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result, "*.log\n");
+    }
+
+    #[test]
+    fn resolve_templates_returns_builtin_agentic() {
+        let result = resolve_templates("agentic").unwrap();
+        assert!(result.contains(".kiro/"));
+        assert!(result.contains(".cursor/"));
+    }
+}
+
 mod builtins {
     pub(super) const NAMES: &[&str] = &["agentic"];
 
@@ -161,21 +254,16 @@ mod builtins {
         }
     }
 
-    const AGENTIC: &str = "\
-# Kiro
-.kiro/
-skills-lock.json
-
-# Agent specs / project context
-.agents/
-
-# Cursor
-.cursor/
-
-# GitHub Copilot
-.copilot/
-
-# Continue
-.continue/
-";
+    const AGENTIC: &str = "\n# AI coding agents\n\
+.kiro/\n\
+.cursor/\n\
+.windsurf/\n\
+.claude/\n\
+.continue/\n\
+.copilot/\n\
+.kilocode/\n\
+.zencoder/\n\
+.qwen/\n\
+.agents/\n\
+skills-lock.json\n";
 }
