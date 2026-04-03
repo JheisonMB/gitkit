@@ -4,7 +4,7 @@ use std::{fs, path::Path};
 
 use crate::utils::{confirm, find_repo_root};
 
-mod builtins;
+pub(crate) mod builtins;
 
 #[derive(Subcommand)]
 pub enum HooksCommand {
@@ -59,6 +59,26 @@ pub fn run(cmd: HooksCommand) -> Result<()> {
         HooksCommand::Remove { hook, yes, dry_run } => remove(&hook, yes, dry_run),
         HooksCommand::Show { hook } => show(&hook),
     }
+}
+
+/// Install a built-in hook by name. Used by the interactive wizard.
+pub(crate) fn install_builtin(name: &str, force: bool) -> Result<()> {
+    add_quiet(name, None, force)
+}
+
+/// Install a custom hook command. Used by the interactive wizard.
+pub(crate) fn install_custom(hook: &str, command: &str, force: bool) -> Result<()> {
+    add_quiet(hook, Some(command), force)
+}
+
+/// Returns all available built-ins.
+pub(crate) fn available_builtins() -> &'static [builtins::Builtin] {
+    builtins::ALL
+}
+
+/// Returns all valid git hook names.
+pub(crate) fn valid_hook_names() -> &'static [&'static str] {
+    VALID_HOOKS
 }
 
 fn hooks_dir() -> Result<std::path::PathBuf> {
@@ -116,6 +136,21 @@ fn add(
     fs::write(&path, &script).with_context(|| format!("Failed to write hook '{hook_name}'"))?;
     set_executable(&path)?;
     println!("Installed hook '{hook_name}'.");
+    Ok(())
+}
+
+/// Silent version for the wizard — no backup messages, no "Installed" print.
+fn add_quiet(hook_or_builtin: &str, command: Option<&str>, force: bool) -> Result<()> {
+    let (hook_name, script) = resolve_hook(hook_or_builtin, command)?;
+    let dir = hooks_dir()?;
+    let path = dir.join(hook_name);
+    if path.exists() && !force {
+        let backup = dir.join(format!("{hook_name}.bak"));
+        fs::copy(&path, &backup).with_context(|| format!("Failed to backup {hook_name}"))?;
+    }
+    fs::create_dir_all(&dir).context("Failed to create hooks directory")?;
+    fs::write(&path, &script).with_context(|| format!("Failed to write hook '{hook_name}'"))?;
+    set_executable(&path)?;
     Ok(())
 }
 

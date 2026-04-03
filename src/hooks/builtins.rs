@@ -1,11 +1,11 @@
-pub(super) struct Builtin {
+pub(crate) struct Builtin {
     pub name: &'static str,
     pub hook: &'static str,
     pub description: &'static str,
     pub script: &'static str,
 }
 
-pub(super) const ALL: &[Builtin] = &[
+pub(crate) const ALL: &[Builtin] = &[
     Builtin {
         name: "conventional-commits",
         hook: "commit-msg",
@@ -26,7 +26,7 @@ pub(super) const ALL: &[Builtin] = &[
     },
 ];
 
-pub(super) fn get(name: &str) -> Option<&'static Builtin> {
+pub(crate) fn get(name: &str) -> Option<&'static Builtin> {
     ALL.iter().find(|b| b.name == name)
 }
 
@@ -53,10 +53,10 @@ fi
 
 const BRANCH_NAMING: &str = r#"#!/bin/sh
 branch=$(git symbolic-ref --short HEAD)
-pattern='^(main|master|develop|release/.+|hotfix/.+|feat/.+|fix/.+|chore/.+)$'
+pattern='^(main|master|develop|release/.+|hotfix/.+|feat/.+|feature/.+|fix/.+|chore/.+)$'
 if ! echo "$branch" | grep -qE "$pattern"; then
   echo "ERROR: Branch name '$branch' does not match naming convention."
-  echo "Expected pattern: main|master|develop|release/*|hotfix/*|feat/*|fix/*|chore/*"
+  echo "Expected pattern: main|master|develop|release/*|hotfix/*|feat/*|feature/*|fix/*|chore/*"
   exit 1
 fi
 "#;

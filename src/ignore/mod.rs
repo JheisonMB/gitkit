@@ -35,6 +35,33 @@ pub fn run(cmd: IgnoreCommand) -> Result<()> {
     }
 }
 
+/// Add templates merging into existing .gitignore. Used by the interactive wizard (silent).
+pub(crate) fn add_templates(templates: &str, force: bool) -> Result<()> {
+    let root = find_repo_root()?;
+    let path = root.join(".gitignore");
+    let new_content = resolve_templates(templates)?;
+    let merged = if force {
+        new_content
+    } else {
+        merge_gitignore(&path, &new_content)
+    };
+    fs::write(&path, merged).context("Failed to write .gitignore")?;
+    Ok(())
+}
+
+/// Fetch template names from the API for the search prompt.
+pub(crate) fn fetch_template_list() -> Result<Vec<String>> {
+    let url = format!("{API_BASE}/list?format=lines");
+    let content = ureq::get(&url)
+        .call()
+        .context("Failed to fetch template list")?
+        .into_string()
+        .context("Failed to read response")?;
+    let mut names: Vec<String> = builtins::NAMES.iter().map(|s| s.to_string()).collect();
+    names.extend(content.lines().map(|l| l.to_string()));
+    Ok(names)
+}
+
 fn add(templates: &str, _yes: bool, force: bool, dry_run: bool) -> Result<()> {
     let root = find_repo_root()?;
     let path = root.join(".gitignore");
@@ -227,21 +254,16 @@ mod builtins {
         }
     }
 
-    const AGENTIC: &str = "\
-# Kiro
-.kiro/
-skills-lock.json
-
-# Agent specs / project context
-.agents/
-
-# Cursor
-.cursor/
-
-# GitHub Copilot
-.copilot/
-
-# Continue
-.continue/
-";
+    const AGENTIC: &str = "\n# AI coding agents\n\
+.kiro/\n\
+.cursor/\n\
+.windsurf/\n\
+.claude/\n\
+.continue/\n\
+.copilot/\n\
+.kilocode/\n\
+.zencoder/\n\
+.qwen/\n\
+.agents/\n\
+skills-lock.json\n";
 }

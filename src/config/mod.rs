@@ -39,6 +39,85 @@ pub fn run(cmd: ConfigCommand) -> Result<()> {
     }
 }
 
+/// Individual config options exposed for the interactive wizard.
+pub(crate) struct ConfigOption {
+    pub key: &'static str,
+    pub value: Option<&'static str>, // None for multi-key options like delta
+    pub label: &'static str,
+    pub recommended: bool,
+}
+
+pub(crate) const CONFIG_OPTIONS: &[ConfigOption] = &[
+    ConfigOption {
+        key: "push.autoSetupRemote",
+        value: Some("true"),
+        label: "push.autoSetupRemote = true  —  auto-set upstream on first push",
+        recommended: true,
+    },
+    ConfigOption {
+        key: "help.autocorrect",
+        value: Some("prompt"),
+        label: "help.autocorrect = prompt  —  suggest corrections for mistyped commands",
+        recommended: true,
+    },
+    ConfigOption {
+        key: "diff.algorithm",
+        value: Some("histogram"),
+        label: "diff.algorithm = histogram  —  cleaner diffs for moved code",
+        recommended: true,
+    },
+    ConfigOption {
+        key: "merge.conflictstyle",
+        value: Some("zdiff3"),
+        label: "merge.conflictstyle = zdiff3  —  show base in conflict markers",
+        recommended: false,
+    },
+    ConfigOption {
+        key: "rerere.enabled",
+        value: Some("true"),
+        label: "rerere.enabled = true  —  remember and reuse conflict resolutions",
+        recommended: false,
+    },
+    ConfigOption {
+        key: "core.pager",
+        value: None, // handled separately — installs git-delta via cargo
+        label: "core.pager = delta  —  beautiful syntax-highlighted diffs (requires cargo)",
+        recommended: false,
+    },
+];
+
+/// Apply selected config option keys. Used by the interactive wizard.
+pub(crate) fn apply_config_keys(keys: &[&str], cargo_available: bool) -> Result<()> {
+    for key in keys {
+        // Find the matching option to reuse its value from CONFIG_OPTIONS context,
+        // then dispatch to the appropriate setter.
+        match *key {
+            "core.pager" => {
+                anyhow::ensure!(
+                    cargo_available,
+                    "cargo not found — cannot install git-delta"
+                );
+                if !delta_installed() {
+                    install_delta()?;
+                }
+                for (k, v) in DELTA_CONFIGS {
+                    git_config_set(k, v)?;
+                }
+            }
+            _ => {
+                // All non-delta options map directly from CONFIG_OPTIONS value
+                let value = CONFIG_OPTIONS
+                    .iter()
+                    .find(|o| o.key == *key)
+                    .and_then(|o| o.value)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown config key: {key}"))?;
+                git_config_set(key, value)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 type GitConfigs = &'static [(&'static str, &'static str)];
 
 const DEFAULTS: GitConfigs = &[
