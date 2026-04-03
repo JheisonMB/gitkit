@@ -1,11 +1,23 @@
-# gitkit
+```
+           ███   █████    █████       ███   █████   
+          ░░░   ░░███    ░░███       ░░░   ░░███    
+  ███████ ████  ███████   ░███ █████ ████  ███████  
+ ███░░███░░███ ░░░███░    ░███░░███ ░░███ ░░░███░   
+░███ ░███ ░███   ░███     ░██████░   ░███   ░███    
+░███ ░███ ░███   ░███ ███ ░███░░███  ░███   ░███ ███
+░░███████ █████  ░░█████  ████ █████ █████  ░░█████ 
+ ░░░░░███░░░░░    ░░░░░  ░░░░ ░░░░░ ░░░░░    ░░░░░  
+ ███ ░███                                           
+░░██████                                            
+ ░░░░░░                                             
+```
 
 [![CI](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml)
 [![Release](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml)
 [![Crates.io](https://img.shields.io/crates/v/gitkit)](https://crates.io/crates/gitkit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Standalone CLI for configuring git repos — hooks, `.gitignore`, and `.gitattributes`. No Node.js, no Python, no runtime dependencies. One binary.
+Configure a git repo in seconds — hooks, `.gitignore`, `.gitattributes`, and git config. Interactive wizard or direct commands. No Node.js, no Python, no runtime dependencies. One binary.
 
 ---
 
@@ -31,41 +43,56 @@ irm https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.ps1 | iex
 cargo install gitkit
 ```
 
+Available on [crates.io](https://crates.io/crates/gitkit).
+
 ### GitHub Releases
 
 Check the [Releases](https://github.com/JheisonMB/gitkit/releases) page for precompiled binaries (Linux x86_64, macOS x86_64/ARM64, Windows x86_64).
 
 ### Uninstall
 
+**Linux / macOS:**
 ```bash
 rm -f ~/.local/bin/gitkit
 ```
 
+**Windows (PowerShell):**
+```powershell
+Remove-Item "$env:LOCALAPPDATA\gitkit\gitkit.exe" -Force
+```
+
 ---
 
-## Quick Start
+## Quick Start 
+
+Interactive wizard — guided setup for a new repo:
 
 ```bash
-# Install a built-in hook (hook name inferred automatically)
+gitkit init
+```
+
+Or use commands directly:
+
+```bash
 gitkit hooks add conventional-commits
-
-# Install a custom hook command
-gitkit hooks add pre-push "cargo test"
-
-# See all available built-in hooks
-gitkit hooks list --available
-
-# List installed hooks
-gitkit hooks list
-
-# Generate a .gitignore (merges with existing, no duplicates)
 gitkit ignore add rust,vscode,agentic
-
-# Apply line endings preset
 gitkit attributes init
-
-# Apply curated git config
 gitkit config apply defaults
+```
+
+---
+
+## `gitkit init`
+
+Interactive wizard that guides you through configuring a repo step by step.
+
+- Hooks — built-ins pre-selected, or add a custom command
+- `.gitignore` — filterable search across all gitignore.io templates + built-ins
+- `.gitattributes` — line endings and binary file presets
+- Git config — 6 individual options, recommended ones pre-selected
+
+```
+gitkit init
 ```
 
 ---
@@ -102,13 +129,13 @@ gitkit config apply defaults
 |---|---|
 | `gitkit config apply defaults` | `push.autoSetupRemote`, `help.autocorrect`, `diff.algorithm` |
 | `gitkit config apply advanced` | `merge.conflictstyle zdiff3`, `rerere.enabled` |
-| `gitkit config apply delta` | `core.pager delta` (installs `git-delta` if needed) |
+| `gitkit config apply delta` | `core.pager delta` (requires `cargo`) |
 
 ---
 
 ## Built-in Hooks
 
-Run `gitkit hooks list --available` to see these at any time without leaving the terminal.
+Run `gitkit hooks list --available` to see these without leaving the terminal.
 
 | Name | Hook | Description |
 |---|---|---|
@@ -127,38 +154,6 @@ Built-ins are embedded in the binary — no network required.
 | `--yes`, `-y` | Skip confirmation prompts |
 | `--force`, `-f` | Overwrite existing files |
 | `--dry-run` | Preview changes without applying |
-
----
-
-## Examples
-
-```bash
-# Set up a new repo in one go
-gitkit hooks add conventional-commits
-gitkit hooks add no-secrets
-gitkit ignore add rust,vscode,agentic
-gitkit attributes init
-gitkit config apply defaults
-
-# Preview what config apply would do
-gitkit config apply delta --dry-run
-
-# See what's installed
-gitkit hooks list
-
-# Discover built-ins without opening the docs
-gitkit hooks list --available
-```
-
----
-
-## Tech Stack
-
-| Concern | Crate |
-|---|---|
-| CLI parsing | `clap` (derive) |
-| Error handling | `anyhow` |
-| HTTP client | `ureq` |
 
 ---
 
