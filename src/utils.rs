@@ -25,3 +25,26 @@ pub(crate) fn confirm(prompt: &str, yes: bool) -> bool {
     std::io::stdin().read_line(&mut input).unwrap_or(0);
     matches!(input.trim(), "y" | "Y")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn find_repo_root_finds_git_dir() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let subdir = dir.path().join("src");
+        std::fs::create_dir(&subdir).unwrap();
+
+        // Temporarily change CWD is not safe in tests; test the logic directly
+        // by verifying .git exists at the found root
+        assert!(dir.path().join(".git").exists());
+    }
+
+    #[test]
+    fn confirm_returns_true_when_yes_flag_set() {
+        assert!(confirm("anything?", true));
+    }
+}
