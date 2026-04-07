@@ -1,5 +1,5 @@
 # install.ps1 — download and install gitkit on Windows
-# Usage: irm https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/UniverLab/gitkit/main/scripts/install.ps1 | iex
 #
 # Options (set as env vars before running):
 #   $env:VERSION     = "0.1.0"        # pin a specific version
@@ -7,7 +7,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Repo       = "JheisonMB/gitkit"
+$Repo       = "UniverLab/gitkit"
 $Binary     = "gitkit.exe"
 $Target     = "x86_64-pc-windows-msvc"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:USERPROFILE\.local\bin" }
@@ -72,4 +72,4 @@ Remove-Item $Tmp -Recurse -Force
 $ver = & "$InstallDir\$Binary" --version 2>$null
 Info "done" $ver
 Write-Host ""
-Info "ready" "Run 'gitkit hooks init commit-msg conventional-commits' to get started!"
+Info "ready" "Run 'gitkit init' to get started!"
