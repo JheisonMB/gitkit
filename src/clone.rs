@@ -51,7 +51,7 @@ pub fn run(args: CloneArgs) -> Result<()> {
     } else {
         repository
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(repository)
             .trim_end_matches(".git")
             .to_string()

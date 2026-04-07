@@ -5,7 +5,7 @@ use std::process::Command;
 /// Check if directory is a valid git repository.
 pub fn is_git_repo() -> bool {
     Command::new("git")
-        .args(&["rev-parse", "--is-inside-work-tree"])
+        .args(["rev-parse", "--is-inside-work-tree"])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
