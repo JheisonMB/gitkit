@@ -1,9 +1,9 @@
 #!/bin/sh
 # install.sh — download and install gitkit from GitHub Releases
-# Usage: curl -fsSL https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/UniverLab/gitkit/main/scripts/install.sh | sh
 set -eu
 
-REPO="JheisonMB/gitkit"
+REPO="UniverLab/gitkit"
 BINARY="gitkit"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
@@ -79,4 +79,4 @@ esac
 # --- verify ---
 info "done" "$($INSTALL_DIR/$BINARY --version 2>/dev/null || echo "$BINARY installed")"
 echo ""
-info "ready" "Run 'gitkit hooks init commit-msg conventional-commits' to get started!"
+info "ready" "Run 'gitkit init' to get started!"
