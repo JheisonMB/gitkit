@@ -12,8 +12,8 @@
  ░░░░░░                                             
 ```
 
-[![CI](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/ci.yml)
-[![Release](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml/badge.svg)](https://github.com/JheisonMB/gitkit/actions/workflows/release.yml)
+[![CI](https://github.com/UniverLab/gitkit/actions/workflows/ci.yml/badge.svg)](https://github.com/UniverLab/gitkit/actions/workflows/ci.yml)
+[![Release](https://github.com/UniverLab/gitkit/actions/workflows/release.yml/badge.svg)](https://github.com/UniverLab/gitkit/actions/workflows/release.yml)
 [![Crates.io](https://img.shields.io/crates/v/gitkit)](https://crates.io/crates/gitkit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -28,13 +28,13 @@ Configure a git repo in seconds — hooks, `.gitignore`, `.gitattributes`, and g
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/UniverLab/gitkit/main/scripts/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/JheisonMB/gitkit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/UniverLab/gitkit/main/scripts/install.ps1 | iex
 ```
 
 ### Via cargo
@@ -47,7 +47,7 @@ Available on [crates.io](https://crates.io/crates/gitkit).
 
 ### GitHub Releases
 
-Check the [Releases](https://github.com/JheisonMB/gitkit/releases) page for precompiled binaries (Linux x86_64, macOS x86_64/ARM64, Windows x86_64).
+Check the [Releases](https://github.com/UniverLab/gitkit/releases) page for precompiled binaries (Linux x86_64, macOS x86_64/ARM64, Windows x86_64).
 
 ### Uninstall
 
