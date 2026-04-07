@@ -1,7 +1,7 @@
 use anyhow::Result;
 use inquire::{MultiSelect, Text};
 
-use crate::{attributes, config, hooks, ignore};
+use crate::{attributes, config, git, hooks, ignore};
 
 const BANNER: &str = r#"
            ███   █████    █████       ███   █████   
@@ -18,6 +18,12 @@ const BANNER: &str = r#"
 "#;
 
 pub fn run() -> Result<()> {
+    // Initialize git repository if not already one
+    let git_initialized = git::init_if_needed()?;
+    if git_initialized {
+        println!("  ◇ git repository initialized  ✓");
+    }
+
     println!("{BANNER}");
     println!("  Configure your git repo\n");
 
