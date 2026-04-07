@@ -65,7 +65,13 @@ Remove-Item "$env:LOCALAPPDATA\gitkit\gitkit.exe" -Force
 
 ## Quick Start 
 
-Interactive wizard — guided setup for a new repo:
+**Clone and configure a repo in one command:**
+
+```bash
+gitkit clone https://github.com/user/repo
+```
+
+Or configure an existing repo:
 
 ```bash
 gitkit init
@@ -91,9 +97,48 @@ Interactive wizard that guides you through configuring a repo step by step.
 - `.gitattributes` — line endings and binary file presets
 - Git config — 6 individual options, recommended ones pre-selected
 
-```
+Automatically initializes a git repository if one doesn't exist:
+
+```bash
 gitkit init
 ```
+
+---
+
+## `gitkit clone`
+
+Clone a repository and automatically run `gitkit init` to configure it.
+
+**Usage:**
+
+```bash
+gitkit clone [OPTIONS] <REPOSITORY> [DIRECTORY]
+```
+
+**Arguments:**
+
+- `<REPOSITORY>` — Repository URL or path to clone
+- `[DIRECTORY]` — Target directory (defaults to repository name)
+
+**Options:**
+
+- `-b, --branch <BRANCH>` — Clone specific branch (defaults to repository default)
+- `-h, --help` — Print help
+
+**Examples:**
+
+```bash
+# Clone and auto-configure
+gitkit clone https://github.com/user/repo
+
+# Clone specific branch
+gitkit clone -b develop https://github.com/user/repo
+
+# Clone to custom directory
+gitkit clone https://github.com/user/repo my-project
+```
+
+The wizard runs automatically after cloning, allowing you to configure hooks, `.gitignore`, `.gitattributes`, and git config in one workflow.
 
 ---
 
