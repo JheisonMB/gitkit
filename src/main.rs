@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod attributes;
+mod clone;
 mod config;
 mod git;
 mod hooks;
@@ -24,6 +25,8 @@ struct Cli {
 enum Command {
     /// Interactive wizard to configure your repo
     Init,
+    /// Clone repository and run init wizard
+    Clone(clone::CloneArgs),
     /// Manage git hooks
     Hooks {
         #[command(subcommand)]
@@ -50,6 +53,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Init => init::run(),
+        Command::Clone(args) => clone::run(args),
         Command::Hooks { action } => hooks::run(action),
         Command::Ignore { action } => ignore::run(action),
         Command::Attributes { action } => attributes::run(action),
