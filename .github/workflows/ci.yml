@@ -43,11 +43,14 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt --check
 
-      - name: Cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Cargo build
+        run: cargo build --release
 
       - name: Cargo test
         run: cargo test
+
+      - name: Cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
 
   publish-check:
     name: Publish Check (dry-run)
@@ -63,6 +66,12 @@ jobs:
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cargo publish dry-run
         run: cargo publish --dry-run
