@@ -21,6 +21,10 @@ Configure a git repo in seconds — hooks, `.gitignore`, `.gitattributes`, and g
 
 ---
 
+![Demo](assets/demo.gif)
+
+---
+
 ## Installation
 
 ### Quick install (recommended)
