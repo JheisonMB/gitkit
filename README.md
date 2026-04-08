@@ -17,7 +17,24 @@
 [![Crates.io](https://img.shields.io/crates/v/gitkit)](https://crates.io/crates/gitkit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Configure a git repo in seconds — hooks, `.gitignore`, `.gitattributes`, and git config. Interactive wizard or direct commands. No Node.js, no Python, no runtime dependencies. One binary.
+Set up a git repo the way you actually work — one guided flow for hooks, `.gitignore`, `.gitattributes`, and git config. One binary, no Node.js, no Python, no runtime dependencies.
+
+---
+
+### Demo
+
+![Demo](assets/demo.gif)
+
+---
+
+## Features
+
+- **🪄 Guided repo setup** — Configure hooks, `.gitignore`, `.gitattributes`, and git config in one interactive flow.
+- **🔁 Clone and bootstrap** — Clone a repo and drop straight into the setup wizard.
+- **🧰 Hook management** — Install, list, show, or remove built-in hooks, or wire up your own command.
+- **🧩 Ignore and attribute presets** — Browse built-in and gitignore.io templates, then apply line-ending or binary presets.
+- **⚙️ Curated git config** — Apply practical presets like auto-upstream, autocorrect, histogram diffs, zdiff3, rerere, and delta pager setup.
+- **📦 Single binary** — No Node.js, no Python, no extra runtime.
 
 ---
 
@@ -205,3 +222,14 @@ Built-ins are embedded in the binary — no network required.
 ## License
 
 MIT
+
+---
+## Support
+
+- 📖 [GitHub Issues](https://github.com/UniverLab/gitkit/issues) — Report bugs or request features
+- 💬 [Discussions](https://github.com/UniverLab/gitkit/discussions) — Ask questions
+- 🐦 Twitter: [@JheisonMB](https://twitter.com/JheisonMB)
+
+---
+
+Made with ❤️ by [JheisonMB](https://github.com/JheisonMB) and [UniverLab](https://github.com/UniverLab)
