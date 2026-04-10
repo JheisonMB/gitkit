@@ -12,10 +12,12 @@
  ░░░░░░                                             
 ```
 
-[![CI](https://github.com/UniverLab/gitkit/actions/workflows/ci.yml/badge.svg)](https://github.com/UniverLab/gitkit/actions/workflows/ci.yml)
-[![Release](https://github.com/UniverLab/gitkit/actions/workflows/release.yml/badge.svg)](https://github.com/UniverLab/gitkit/actions/workflows/release.yml)
-[![Crates.io](https://img.shields.io/crates/v/gitkit)](https://crates.io/crates/gitkit)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/UniverLab/gitkit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/UniverLab/gitkit/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI"/></a>
+  <a href="https://crates.io/crates/gitkit"><img src="https://img.shields.io/crates/v/gitkit?style=for-the-badge&logo=rust&logoColor=white" alt="Crates.io"/></a>
+  <img src="https://img.shields.io/badge/Status-Active-27AE60?style=for-the-badge" alt="Status"/>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2E8B57?style=for-the-badge" alt="License"/></a>
+</p>
 
 Set up a git repo the way you actually work — one guided flow for hooks, `.gitignore`, `.gitattributes`, and git config. One binary, no Node.js, no Python, no runtime dependencies.
 
@@ -222,13 +224,6 @@ Built-ins are embedded in the binary — no network required.
 ## License
 
 MIT
-
----
-## Support
-
-- 📖 [GitHub Issues](https://github.com/UniverLab/gitkit/issues) — Report bugs or request features
-- 💬 [Discussions](https://github.com/UniverLab/gitkit/discussions) — Ask questions
-- 🐦 Twitter: [@JheisonMB](https://twitter.com/JheisonMB)
 
 ---
 
