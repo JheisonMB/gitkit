@@ -1,5 +1,5 @@
 use anyhow::Result;
-use inquire::{MultiSelect, Text};
+use inquire::{MultiSelect, Select, Text};
 use std::{collections::HashSet, fs};
 
 use crate::{attributes, config, git, hooks, ignore, utils::find_repo_root};
@@ -75,12 +75,11 @@ pub fn run() -> Result<()> {
 
     for item in &hook_selections {
         if item == "Add custom hook..." {
-            let valid = hooks::valid_hook_names().join(", ");
-            let hook_name = Text::new("  Hook name")
-                .with_help_message(&format!("Valid: {valid}"))
-                .prompt()?;
+            let hook_name = Select::new("Hook type", hooks::valid_hook_names().to_vec())
+                .prompt()
+                .map_err(|e| anyhow::anyhow!("Hook selection cancelled: {}", e))?;
             let command = Text::new("  Command to run").prompt()?;
-            custom_hooks.push((hook_name, command));
+            custom_hooks.push((hook_name.to_string(), command));
         } else if let Some(idx) = hook_items.iter().position(|i| i == item) {
             if idx < builtins.len() {
                 selected_builtins.push(builtins[idx].name);
