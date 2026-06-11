@@ -1,7 +1,8 @@
 use anyhow::Result;
 use inquire::{MultiSelect, Text};
+use std::{collections::HashSet, fs};
 
-use crate::{attributes, config, git, hooks, ignore};
+use crate::{attributes, config, git, hooks, ignore, utils::find_repo_root};
 
 const BANNER: &str = r#"
            ███   █████    █████       ███   █████   
@@ -35,14 +36,36 @@ pub fn run() -> Result<()> {
 
     // ── Hooks ────────────────────────────────────────────────────────────────
     let builtins = hooks::available_builtins();
+    let installed_hooks = get_installed_hooks();
+
     let mut hook_items: Vec<String> = builtins
         .iter()
-        .map(|b| format!("{:<25} ({})  —  {}", b.name, b.hook, b.description))
+        .map(|b| {
+            let base = format!("{:<25} ({})  —  {}", b.name, b.hook, b.description);
+            if installed_hooks.contains(b.name) {
+                format!("{} [✓ installed]", base)
+            } else {
+                base
+            }
+        })
         .collect();
     hook_items.push("Add custom hook...".to_string());
 
+    let preselected: Vec<usize> = builtins
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| installed_hooks.contains(b.name))
+        .map(|(i, _)| i)
+        .collect();
+
+    let default_selection = if preselected.is_empty() {
+        vec![0usize]
+    } else {
+        preselected
+    };
+
     let hook_selections = MultiSelect::new("Hooks", hook_items.clone())
-        .with_default(&[0usize]) // conventional-commits preselected
+        .with_default(&default_selection)
         .with_help_message("↑↓ move  space select  enter confirm  esc skip")
         .prompt_skippable()?
         .unwrap_or_default();
@@ -64,6 +87,12 @@ pub fn run() -> Result<()> {
             }
         }
     }
+
+    let hooks_to_remove: Vec<&str> = installed_hooks
+        .iter()
+        .filter(|h| !selected_builtins.contains(&h.as_str()))
+        .map(|s| s.as_str())
+        .collect();
 
     // ── .gitignore ───────────────────────────────────────────────────────────
     println!();
@@ -97,14 +126,26 @@ pub fn run() -> Result<()> {
 
     // ── Git config ───────────────────────────────────────────────────────────
     println!();
+    let configured_keys = get_configured_keys();
+
     let config_options: Vec<&config::ConfigOption> = config::CONFIG_OPTIONS
         .iter()
         .filter(|o| o.key != "core.pager" || cargo_available)
         .collect();
 
-    let config_labels: Vec<&str> = config_options.iter().map(|o| o.label).collect();
+    let config_labels: Vec<String> = config_options
+        .iter()
+        .map(|o| {
+            if configured_keys.contains(o.key) {
+                format!("{} [✓ already set]", o.label)
+            } else {
+                o.label.to_string()
+            }
+        })
+        .collect();
 
-    // pre-select recommended ones
+    let config_labels_refs: Vec<&str> = config_labels.iter().map(|s| s.as_str()).collect();
+
     let defaults: Vec<usize> = config_options
         .iter()
         .enumerate()
@@ -112,7 +153,7 @@ pub fn run() -> Result<()> {
         .map(|(i, _)| i)
         .collect();
 
-    let config_selections = MultiSelect::new("Git config", config_labels.clone())
+    let config_selections = MultiSelect::new("Git config", config_labels_refs.clone())
         .with_default(&defaults)
         .with_help_message("↑↓ move  space select  enter confirm  esc skip")
         .prompt_skippable()?
@@ -120,9 +161,15 @@ pub fn run() -> Result<()> {
 
     let selected_config_keys: Vec<&str> = resolve_keys(
         &config_selections,
-        &config_labels,
+        &config_labels_refs,
         &config_options.iter().map(|o| o.key).collect::<Vec<_>>(),
     );
+
+    let configs_to_remove: Vec<&str> = config_options
+        .iter()
+        .filter(|o| configured_keys.contains(o.key) && !selected_config_keys.contains(&o.key))
+        .map(|o| o.key)
+        .collect();
 
     // ── Summary & confirm ────────────────────────────────────────────────────
     let nothing = selected_builtins.is_empty()
@@ -175,6 +222,13 @@ pub fn run() -> Result<()> {
         hooks::install_custom(hook, cmd, false)?;
         println!("  ◇ hook '{hook}' installed  ✓");
     }
+    for hook in &hooks_to_remove {
+        if let Some(builtin) = hooks::available_builtins().iter().find(|b| b.name == *hook) {
+            if hooks::remove_hook(builtin.hook, true).is_ok() {
+                println!("  ◇ hook '{hook}' removed  ✓");
+            }
+        }
+    }
     if !selected_templates.is_empty() {
         let joined = selected_templates.join(",");
         ignore::add_templates(&joined, false)?;
@@ -192,6 +246,12 @@ pub fn run() -> Result<()> {
         )?;
         println!("  ◇ git config applied  ✓");
     }
+    for key in &configs_to_remove {
+        if config::remove_config_key(key, config::ConfigScope::Local).is_err() {
+            let _ = config::remove_config_key(key, config::ConfigScope::Global);
+        }
+        println!("  ◇ git config '{key}' removed  ✓");
+    }
 
     println!("\n  Done\n");
     Ok(())
@@ -199,6 +259,64 @@ pub fn run() -> Result<()> {
 
 fn load_ignore_templates() -> Vec<String> {
     ignore::fetch_template_list().unwrap_or_default()
+}
+
+fn get_installed_hooks() -> HashSet<String> {
+    let mut installed = HashSet::new();
+    if let Ok(root) = find_repo_root() {
+        let hooks_dir = root.join(".git").join("hooks");
+        if hooks_dir.exists() {
+            if let Ok(entries) = fs::read_dir(&hooks_dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.ends_with(".bak") && !name.ends_with(".sample") {
+                        let content = fs::read_to_string(entry.path()).unwrap_or_default();
+                        let builtin_match = hooks::available_builtins().iter().find(|b| {
+                            b.hook == name && content.contains(&b.script[..80.min(b.script.len())])
+                        });
+                        if let Some(b) = builtin_match {
+                            installed.insert(b.name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    installed
+}
+
+fn get_configured_keys() -> HashSet<String> {
+    let mut configured = HashSet::new();
+    for option in config::CONFIG_OPTIONS {
+        if option.key == "core.pager" {
+            continue;
+        }
+        if let Some(value) = option.value {
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["config", "--local", "--get", option.key])
+                .output()
+            {
+                if output.status.success() {
+                    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if current == value {
+                        configured.insert(option.key.to_string());
+                    }
+                }
+            }
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["config", "--global", "--get", option.key])
+                .output()
+            {
+                if output.status.success() {
+                    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if current == value {
+                        configured.insert(option.key.to_string());
+                    }
+                }
+            }
+        }
+    }
+    configured
 }
 
 /// Maps selected display labels back to their corresponding keys.

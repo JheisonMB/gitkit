@@ -211,22 +211,14 @@ fn list(available: bool) -> Result<()> {
     Ok(())
 }
 
-fn remove(hook: &str, yes: bool, dry_run: bool) -> Result<()> {
+fn remove(hook: &str, yes: bool, _dry_run: bool) -> Result<()> {
+    remove_hook(hook, yes)
+}
+
+pub(crate) fn remove_hook(hook: &str, _yes: bool) -> Result<()> {
     let path = hooks_dir()?.join(hook);
     anyhow::ensure!(path.exists(), "Hook '{hook}' is not installed");
-
-    if !confirm(&format!("Remove hook '{hook}'?"), yes) {
-        println!("Aborted.");
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("[dry-run] Would remove hook '{hook}'.");
-        return Ok(());
-    }
-
     fs::remove_file(&path).with_context(|| format!("Failed to remove hook '{hook}'"))?;
-    println!("Removed hook '{hook}'.");
     Ok(())
 }
 

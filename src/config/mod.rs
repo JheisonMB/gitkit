@@ -289,6 +289,16 @@ fn git_config_set(key: &str, value: &str, scope: ConfigScope) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn remove_config_key(key: &str, scope: ConfigScope) -> Result<()> {
+    let flag = scope_flag(scope);
+    let status = Command::new("git")
+        .args(["config", flag, "--unset", key])
+        .status()
+        .with_context(|| format!("Failed to unset git config for '{key}'"))?;
+    anyhow::ensure!(status.success(), "git config {flag} --unset {key} failed");
+    Ok(())
+}
+
 fn delta_installed() -> bool {
     Command::new("delta")
         .arg("--version")
