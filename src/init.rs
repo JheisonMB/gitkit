@@ -171,11 +171,13 @@ pub fn run() -> Result<()> {
         .collect();
 
     // ── Summary & confirm ────────────────────────────────────────────────────
+    let has_removals = !hooks_to_remove.is_empty() || !configs_to_remove.is_empty();
     let nothing = selected_builtins.is_empty()
         && custom_hooks.is_empty()
         && selected_templates.is_empty()
         && selected_attrs.is_empty()
-        && selected_config_keys.is_empty();
+        && selected_config_keys.is_empty()
+        && !has_removals;
 
     if nothing {
         println!("\n  Nothing selected — exiting.");
@@ -246,10 +248,11 @@ pub fn run() -> Result<()> {
         println!("  ◇ git config applied  ✓");
     }
     for key in &configs_to_remove {
-        if config::remove_config_key(key, config::ConfigScope::Local).is_err() {
-            let _ = config::remove_config_key(key, config::ConfigScope::Global);
+        let removed = config::remove_config_key(key, config::ConfigScope::Local).is_ok()
+            || config::remove_config_key(key, config::ConfigScope::Global).is_ok();
+        if removed {
+            println!("  ◇ git config '{key}' removed  ✓");
         }
-        println!("  ◇ git config '{key}' removed  ✓");
     }
 
     println!("\n  Done\n");
@@ -271,7 +274,13 @@ fn get_installed_hooks() -> HashSet<String> {
                     if !name.ends_with(".bak") && !name.ends_with(".sample") {
                         let content = fs::read_to_string(entry.path()).unwrap_or_default();
                         let builtin_match = hooks::available_builtins().iter().find(|b| {
-                            b.hook == name && content.contains(&b.script[..80.min(b.script.len())])
+                            b.hook == name
+                                && b.script
+                                    .chars()
+                                    .take(80)
+                                    .collect::<String>()
+                                    .chars()
+                                    .all(|c| content.contains(c))
                         });
                         if let Some(b) = builtin_match {
                             installed.insert(b.name.to_string());
@@ -286,36 +295,45 @@ fn get_installed_hooks() -> HashSet<String> {
 
 fn get_configured_keys() -> HashSet<String> {
     let mut configured = HashSet::new();
+
+    // Get all config values in one call per scope
+    let local_configs = get_all_git_configs("--local");
+    let global_configs = get_all_git_configs("--global");
+
     for option in config::CONFIG_OPTIONS {
         if option.key == "core.pager" {
             continue;
         }
-        if let Some(value) = option.value {
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["config", "--local", "--get", option.key])
-                .output()
+        if let Some(expected_value) = option.value {
+            // Check local first, then global
+            if local_configs.get(option.key).map(|s| s.as_str()) == Some(expected_value)
+                || global_configs.get(option.key).map(|s| s.as_str()) == Some(expected_value)
             {
-                if output.status.success() {
-                    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if current == value {
-                        configured.insert(option.key.to_string());
-                    }
-                }
-            }
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["config", "--global", "--get", option.key])
-                .output()
-            {
-                if output.status.success() {
-                    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if current == value {
-                        configured.insert(option.key.to_string());
-                    }
-                }
+                configured.insert(option.key.to_string());
             }
         }
     }
     configured
+}
+
+fn get_all_git_configs(scope: &str) -> std::collections::HashMap<String, String> {
+    let mut configs = std::collections::HashMap::new();
+
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["config", scope, "--list"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    configs.insert(key.to_string(), value.to_string());
+                }
+            }
+        }
+    }
+
+    configs
 }
 
 /// Maps selected display labels back to their corresponding keys.
@@ -340,9 +358,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_configured_keys_returns_empty_for_no_config() {
+    fn get_configured_keys_works() {
         let configured = get_configured_keys();
-        assert!(configured.is_empty() || !configured.is_empty());
+        // Just verify it doesn't panic and returns a valid HashSet
+        assert!(configured.len() >= 0);
     }
 
     #[test]

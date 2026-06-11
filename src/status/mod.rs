@@ -1,8 +1,8 @@
 use anyhow::Result;
-use std::{fs, process::Command};
+use std::fs;
 
 use crate::hooks::builtins;
-use crate::utils::find_repo_root;
+use crate::utils::{find_repo_root, git_config_get};
 
 pub fn run() -> Result<()> {
     let in_repo = find_repo_root().is_ok();
@@ -52,9 +52,15 @@ fn print_hooks() -> Result<()> {
         let hook_name = entry.file_name().to_string_lossy().to_string();
         let content = fs::read_to_string(entry.path()).unwrap_or_default();
 
-        let builtin_match = builtins::ALL
-            .iter()
-            .find(|b| b.hook == hook_name && content.contains(&b.script[..80.min(b.script.len())]));
+        let builtin_match = builtins::ALL.iter().find(|b| {
+            b.hook == hook_name
+                && b.script
+                    .chars()
+                    .take(80)
+                    .collect::<String>()
+                    .chars()
+                    .all(|c| content.contains(c))
+        });
 
         match builtin_match {
             Some(b) => println!("  ✓ {} ({})", b.name, b.hook),
@@ -160,22 +166,9 @@ fn print_config(scope: &str) -> Result<()> {
     Ok(())
 }
 
-fn git_config_get(key: &str, scope: &str) -> Option<String> {
-    let output = Command::new("git")
-        .args(["config", scope, "--get", key])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::utils::git_config_get;
 
     #[test]
     fn git_config_get_returns_none_for_missing_key() {
