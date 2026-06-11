@@ -32,10 +32,11 @@ Set up a git repo the way you actually work — one guided flow for hooks, `.git
 ## Features
 
 - **🪄 Guided repo setup** — Configure hooks, `.gitignore`, `.gitattributes`, and git config in one interactive flow.
+- **📊 Status overview** — See what's currently configured with `gitkit status`.
 - **🔁 Clone and bootstrap** — Clone a repo and drop straight into the setup wizard.
 - **🧰 Hook management** — Install, list, show, or remove built-in hooks, or wire up your own command.
 - **🧩 Ignore and attribute presets** — Browse built-in and gitignore.io templates, then apply line-ending or binary presets.
-- **⚙️ Curated git config** — Apply practical presets like auto-upstream, autocorrect, histogram diffs, zdiff3, rerere, and delta pager setup.
+- **⚙️ Curated git config** — Apply practical presets with `--global` or `--local` scope, with idempotency detection.
 - **📦 Single binary** — No Node.js, no Python, no extra runtime.
 
 ---
@@ -84,16 +85,22 @@ Remove-Item "$env:LOCALAPPDATA\gitkit\gitkit.exe" -Force
 
 ## Quick Start 
 
+**Run the wizard (no arguments needed):**
+
+```bash
+gitkit
+```
+
+Or explicitly:
+
+```bash
+gitkit init
+```
+
 **Clone and configure a repo in one command:**
 
 ```bash
 gitkit clone https://github.com/user/repo
-```
-
-Or configure an existing repo:
-
-```bash
-gitkit init
 ```
 
 Or use commands directly:
@@ -107,20 +114,57 @@ gitkit config apply defaults
 
 ---
 
-## `gitkit init`
+## `gitkit status`
 
-Interactive wizard that guides you through configuring a repo step by step.
-
-- Hooks — built-ins pre-selected, or add a custom command
-- `.gitignore` — filterable search across all gitignore.io templates + built-ins
-- `.gitattributes` — line endings and binary file presets
-- Git config — 6 individual options, recommended ones pre-selected
-
-Automatically initializes a git repository if one doesn't exist:
+Show what's currently configured in your repo and globally.
 
 ```bash
+gitkit status
+```
+
+**Output example:**
+
+```
+Hooks:
+  ✓ conventional-commits (commit-msg)
+  ✓ custom: pre-push → "cargo test"
+
+.gitignore:
+  ✓ 14 patterns
+
+.gitattributes:
+  ✓ line-endings (eol=lf)
+
+Git config (local):
+  (none)
+
+Git config (global):
+  ✓ push.autoSetupRemote = true
+  ✓ help.autocorrect = prompt
+  ✓ diff.algorithm = histogram
+```
+
+---
+
+## `gitkit init`
+
+Interactive wizard that guides you through configuring a repo step by step. Shows what's already configured and allows removal.
+
+- Hooks — shows installed hooks, pre-selects them, allows removal
+- `.gitignore` — filterable search across all gitignore.io templates + built-ins
+- `.gitattributes` — line endings and binary file presets
+- Git config — shows current values, allows removal
+- Custom hooks — interactive picker for hook type selection
+
+Run without arguments or explicitly:
+
+```bash
+gitkit
+# or
 gitkit init
 ```
+
+Automatically initializes a git repository if one doesn't exist.
 
 ---
 
@@ -194,6 +238,26 @@ The wizard runs automatically after cloning, allowing you to configure hooks, `.
 | `gitkit config apply defaults` | `push.autoSetupRemote`, `help.autocorrect`, `diff.algorithm` |
 | `gitkit config apply advanced` | `merge.conflictstyle zdiff3`, `rerere.enabled` |
 | `gitkit config apply delta` | `core.pager delta` (requires `cargo`) |
+| `gitkit config show` | Show current git config values |
+
+**Scope options:**
+
+- `--global` — Apply to global git config (all repos)
+- `--local` — Apply to local repo config only
+- Default: `--local` if in a repo, `--global` otherwise
+
+**Idempotency:**
+
+Configs already set with the same value show `(already set)` and are skipped.
+
+```bash
+$ gitkit config apply defaults --global
+✓ push.autoSetupRemote = true (already set)
+✓ help.autocorrect = prompt (already set)
+✓ diff.algorithm = histogram (already set)
+
+All configs already applied.
+```
 
 ---
 
