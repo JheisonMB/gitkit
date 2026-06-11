@@ -8,6 +8,7 @@ mod git;
 mod hooks;
 mod ignore;
 mod init;
+mod status;
 mod utils;
 
 #[derive(Parser)]
@@ -18,13 +19,15 @@ mod utils;
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// Interactive wizard to configure your repo
     Init,
+    /// Show current configuration status
+    Status,
     /// Clone repository and run init wizard
     Clone(clone::CloneArgs),
     /// Manage git hooks
@@ -52,11 +55,12 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Init => init::run(),
-        Command::Clone(args) => clone::run(args),
-        Command::Hooks { action } => hooks::run(action),
-        Command::Ignore { action } => ignore::run(action),
-        Command::Attributes { action } => attributes::run(action),
-        Command::Config { action } => config::run(action),
+        Some(Command::Init) | None => init::run(),
+        Some(Command::Status) => status::run(),
+        Some(Command::Clone(args)) => clone::run(args),
+        Some(Command::Hooks { action }) => hooks::run(action),
+        Some(Command::Ignore { action }) => ignore::run(action),
+        Some(Command::Attributes { action }) => attributes::run(action),
+        Some(Command::Config { action }) => config::run(action),
     }
 }
