@@ -185,7 +185,11 @@ pub fn run() -> Result<()> {
         println!("  ◇ .gitattributes applied  ✓");
     }
     if !selected_config_keys.is_empty() {
-        config::apply_config_keys(&selected_config_keys, cargo_available)?;
+        config::apply_config_keys(
+            &selected_config_keys,
+            cargo_available,
+            config::ConfigScope::Local,
+        )?;
         println!("  ◇ git config applied  ✓");
     }
 
