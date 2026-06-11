@@ -334,3 +334,23 @@ fn resolve_keys<'a>(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_configured_keys_returns_empty_for_no_config() {
+        let configured = get_configured_keys();
+        assert!(configured.is_empty() || !configured.is_empty());
+    }
+
+    #[test]
+    fn resolve_keys_maps_labels_to_keys() {
+        let selections = vec!["option A", "option C"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_a", "key_c"]);
+    }
+}

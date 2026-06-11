@@ -356,4 +356,10 @@ mod tests {
         assert!(matches!(determine_scope(true, false), ConfigScope::Global));
         assert!(matches!(determine_scope(false, true), ConfigScope::Local));
     }
+
+    #[test]
+    fn scope_flag_returns_correct_values() {
+        assert_eq!(scope_flag(ConfigScope::Global), "--global");
+        assert_eq!(scope_flag(ConfigScope::Local), "--local");
+    }
 }
