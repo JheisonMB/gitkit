@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Walk up from CWD until we find a `.git` directory, like git itself does.
 pub(crate) fn find_repo_root() -> Result<PathBuf> {
@@ -26,6 +27,20 @@ pub(crate) fn confirm(prompt: &str, yes: bool) -> bool {
     matches!(input.trim(), "y" | "Y")
 }
 
+/// Get a git config value for a specific key and scope (--global or --local).
+pub(crate) fn git_config_get(key: &str, scope: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args(["config", scope, "--get", key])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +61,11 @@ mod tests {
     #[test]
     fn confirm_returns_true_when_yes_flag_set() {
         assert!(confirm("anything?", true));
+    }
+
+    #[test]
+    fn git_config_get_returns_none_for_missing_key() {
+        let result = git_config_get("nonexistent.key.xyz", "--global");
+        assert!(result.is_none());
     }
 }

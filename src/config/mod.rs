@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Subcommand, ValueEnum};
 use std::process::Command;
 
-use crate::utils::confirm;
+use crate::utils::{confirm, find_repo_root};
 
 #[derive(Subcommand)]
 pub enum ConfigCommand {
@@ -13,7 +13,13 @@ pub enum ConfigCommand {
         yes: bool,
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, conflicts_with = "local")]
+        global: bool,
+        #[arg(long, conflicts_with = "global")]
+        local: bool,
     },
+    /// Show current git config values
+    Show,
 }
 
 #[derive(ValueEnum, Clone)]
@@ -27,15 +33,90 @@ pub enum Preset {
 }
 
 pub fn run(cmd: ConfigCommand) -> Result<()> {
-    let ConfigCommand::Apply {
-        preset,
-        yes,
-        dry_run,
-    } = cmd;
-    match preset {
-        Preset::Defaults => apply_defaults(dry_run),
-        Preset::Advanced => apply_advanced(dry_run),
-        Preset::Delta => apply_delta(yes, dry_run),
+    match cmd {
+        ConfigCommand::Apply {
+            preset,
+            yes,
+            dry_run,
+            global,
+            local,
+        } => {
+            let scope = determine_scope(global, local);
+            match preset {
+                Preset::Defaults => apply_defaults(dry_run, scope),
+                Preset::Advanced => apply_advanced(dry_run, scope),
+                Preset::Delta => apply_delta(yes, dry_run, scope),
+            }
+        }
+        ConfigCommand::Show => show_config(),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ConfigScope {
+    Global,
+    Local,
+}
+
+fn determine_scope(global: bool, local: bool) -> ConfigScope {
+    if global {
+        ConfigScope::Global
+    } else if local || find_repo_root().is_ok() {
+        ConfigScope::Local
+    } else {
+        ConfigScope::Global
+    }
+}
+
+fn scope_flag(scope: ConfigScope) -> &'static str {
+    match scope {
+        ConfigScope::Global => "--global",
+        ConfigScope::Local => "--local",
+    }
+}
+
+fn show_config() -> Result<()> {
+    println!("Git config (global):");
+    show_scope_config("--global");
+    println!();
+    println!("Git config (local):");
+    show_scope_config("--local");
+    Ok(())
+}
+
+fn show_scope_config(scope: &str) {
+    let configs = [
+        "push.autoSetupRemote",
+        "help.autocorrect",
+        "diff.algorithm",
+        "merge.conflictstyle",
+        "rerere.enabled",
+        "core.pager",
+    ];
+
+    let mut any = false;
+    for key in &configs {
+        if let Some(value) = git_config_get(key, scope) {
+            println!("  {key} = {value}");
+            any = true;
+        }
+    }
+
+    if !any {
+        println!("  (none)");
+    }
+}
+
+fn git_config_get(key: &str, scope: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args(["config", scope, "--get", key])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
     }
 }
 
@@ -87,10 +168,12 @@ pub(crate) const CONFIG_OPTIONS: &[ConfigOption] = &[
 ];
 
 /// Apply selected config option keys. Used by the interactive wizard.
-pub(crate) fn apply_config_keys(keys: &[&str], cargo_available: bool) -> Result<()> {
+pub(crate) fn apply_config_keys(
+    keys: &[&str],
+    cargo_available: bool,
+    scope: ConfigScope,
+) -> Result<()> {
     for key in keys {
-        // Find the matching option to reuse its value from CONFIG_OPTIONS context,
-        // then dispatch to the appropriate setter.
         match *key {
             "core.pager" => {
                 anyhow::ensure!(
@@ -101,17 +184,16 @@ pub(crate) fn apply_config_keys(keys: &[&str], cargo_available: bool) -> Result<
                     install_delta()?;
                 }
                 for (k, v) in DELTA_CONFIGS {
-                    git_config_set(k, v)?;
+                    git_config_set(k, v, scope)?;
                 }
             }
             _ => {
-                // All non-delta options map directly from CONFIG_OPTIONS value
                 let value = CONFIG_OPTIONS
                     .iter()
                     .find(|o| o.key == *key)
                     .and_then(|o| o.value)
                     .ok_or_else(|| anyhow::anyhow!("Unknown config key: {key}"))?;
-                git_config_set(key, value)?;
+                git_config_set(key, value, scope)?;
             }
         }
     }
@@ -138,18 +220,18 @@ const DELTA_CONFIGS: GitConfigs = &[
     ("delta.side-by-side", "true"),
 ];
 
-fn apply_defaults(dry_run: bool) -> Result<()> {
-    apply_configs(DEFAULTS, dry_run)
+fn apply_defaults(dry_run: bool, scope: ConfigScope) -> Result<()> {
+    apply_configs(DEFAULTS, dry_run, scope)
 }
 
-fn apply_advanced(dry_run: bool) -> Result<()> {
+fn apply_advanced(dry_run: bool, scope: ConfigScope) -> Result<()> {
     println!(
         "Warning: merge.conflictstyle=zdiff3 may cause issues with GitHub Desktop and GUI merge tools."
     );
-    apply_configs(ADVANCED, dry_run)
+    apply_configs(ADVANCED, dry_run, scope)
 }
 
-fn apply_delta(yes: bool, dry_run: bool) -> Result<()> {
+fn apply_delta(yes: bool, dry_run: bool, scope: ConfigScope) -> Result<()> {
     if !delta_installed() {
         if !confirm(
             "git-delta is not installed. Install via `cargo install git-delta`?",
@@ -166,29 +248,54 @@ fn apply_delta(yes: bool, dry_run: bool) -> Result<()> {
     }
     println!(
         "Note: delta.side-by-side=true may look wrong in narrow terminals. \
-        Disable with: git config --global delta.side-by-side false"
+        Disable with: git config {} delta.side-by-side false",
+        scope_flag(scope)
     );
-    apply_configs(DELTA_CONFIGS, dry_run)
+    apply_configs(DELTA_CONFIGS, dry_run, scope)
 }
 
-fn apply_configs(configs: GitConfigs, dry_run: bool) -> Result<()> {
+fn apply_configs(configs: GitConfigs, dry_run: bool, scope: ConfigScope) -> Result<()> {
+    let flag = scope_flag(scope);
+    let mut already_set = 0;
+
     for (key, value) in configs {
-        if dry_run {
-            println!("[dry-run] git config --global {key} {value}");
+        let current = git_config_get(key, flag);
+
+        if current.as_deref() == Some(value) {
+            println!("✓ {key} = {value} (already set)");
+            already_set += 1;
+        } else if dry_run {
+            println!("[dry-run] git config {flag} {key} {value}");
         } else {
-            git_config_set(key, value)?;
-            println!("Set {key} = {value}");
+            git_config_set(key, value, scope)?;
+            println!("✓ Set {key} = {value}");
         }
     }
+
+    if already_set == configs.len() {
+        println!("\nAll configs already applied.");
+    }
+
     Ok(())
 }
 
-fn git_config_set(key: &str, value: &str) -> Result<()> {
+fn git_config_set(key: &str, value: &str, scope: ConfigScope) -> Result<()> {
+    let flag = scope_flag(scope);
     let status = Command::new("git")
-        .args(["config", "--global", key, value])
+        .args(["config", flag, key, value])
         .status()
         .with_context(|| format!("Failed to run git config for '{key}'"))?;
-    anyhow::ensure!(status.success(), "git config --global {key} {value} failed");
+    anyhow::ensure!(status.success(), "git config {flag} {key} {value} failed");
+    Ok(())
+}
+
+pub(crate) fn remove_config_key(key: &str, scope: ConfigScope) -> Result<()> {
+    let flag = scope_flag(scope);
+    let status = Command::new("git")
+        .args(["config", flag, "--unset", key])
+        .status()
+        .with_context(|| format!("Failed to unset git config for '{key}'"))?;
+    anyhow::ensure!(status.success(), "git config {flag} --unset {key} failed");
     Ok(())
 }
 
@@ -224,18 +331,35 @@ mod tests {
 
     #[test]
     fn apply_configs_dry_run_prints_without_running_git() {
-        // dry_run=true must not invoke git; if it did it would fail in CI without a repo
-        let result = apply_configs(DEFAULTS, true);
+        let result = apply_configs(DEFAULTS, true, ConfigScope::Global);
         assert!(result.is_ok());
     }
 
     #[test]
     fn apply_configs_dry_run_covers_advanced_preset() {
-        assert!(apply_configs(ADVANCED, true).is_ok());
+        assert!(apply_configs(ADVANCED, true, ConfigScope::Global).is_ok());
     }
 
     #[test]
     fn apply_configs_dry_run_covers_delta_preset() {
-        assert!(apply_configs(DELTA_CONFIGS, true).is_ok());
+        assert!(apply_configs(DELTA_CONFIGS, true, ConfigScope::Global).is_ok());
+    }
+
+    #[test]
+    fn determine_scope_defaults_to_global_outside_repo() {
+        let scope = determine_scope(false, false);
+        assert!(matches!(scope, ConfigScope::Global | ConfigScope::Local));
+    }
+
+    #[test]
+    fn determine_scope_respects_explicit_flags() {
+        assert!(matches!(determine_scope(true, false), ConfigScope::Global));
+        assert!(matches!(determine_scope(false, true), ConfigScope::Local));
+    }
+
+    #[test]
+    fn scope_flag_returns_correct_values() {
+        assert_eq!(scope_flag(ConfigScope::Global), "--global");
+        assert_eq!(scope_flag(ConfigScope::Local), "--local");
     }
 }
