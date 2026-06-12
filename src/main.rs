@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod attributes;
+mod builds;
 mod clone;
 mod config;
 mod git;
@@ -50,6 +51,11 @@ enum Command {
         #[command(subcommand)]
         action: config::ConfigCommand,
     },
+    /// Manage saved builds
+    Build {
+        #[command(subcommand)]
+        action: builds::BuildCommand,
+    },
 }
 
 fn main() -> Result<()> {
@@ -62,5 +68,6 @@ fn main() -> Result<()> {
         Some(Command::Ignore { action }) => ignore::run(action),
         Some(Command::Attributes { action }) => attributes::run(action),
         Some(Command::Config { action }) => config::run(action),
+        Some(Command::Build { action }) => builds::run(action),
     }
 }
