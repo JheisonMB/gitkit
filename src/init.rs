@@ -2,7 +2,7 @@ use anyhow::Result;
 use inquire::{MultiSelect, Select, Text};
 use std::{collections::HashSet, fs};
 
-use crate::{attributes, config, git, hooks, ignore, utils::find_repo_root};
+use crate::{attributes, builds, config, git, hooks, ignore, utils::find_repo_root};
 
 const BANNER: &str = r#"
            ███   █████    █████       ███   █████   
@@ -27,6 +27,28 @@ pub fn run() -> Result<()> {
 
     println!("{BANNER}");
     println!("  Configure your git repo\n");
+
+    // ── Build selection ─────────────────────────────────────────────────────
+    let saved_builds = builds::list_build_names();
+    if !saved_builds.is_empty() {
+        let mut options = vec!["Start fresh configuration".to_string()];
+        options.extend(saved_builds.iter().map(|b| format!("Use build: {b}")));
+
+        let choice = Select::new("Saved builds available", options)
+            .with_help_message("↑↓ move  enter confirm")
+            .prompt_skippable()?
+            .unwrap_or_default();
+
+        if choice != "Start fresh configuration" {
+            let build_name = choice.strip_prefix("Use build: ").unwrap_or(&choice);
+            println!();
+            let build = builds::load_build(build_name)?;
+            builds::apply_build(&build)?;
+            println!("\n  Done\n");
+            return Ok(());
+        }
+        println!();
+    }
 
     let cargo_available = std::process::Command::new("cargo")
         .arg("--version")
@@ -253,6 +275,42 @@ pub fn run() -> Result<()> {
         if removed {
             println!("  ◇ git config '{key}' removed  ✓");
         }
+    }
+
+    // ── Save as build ─────────────────────────────────────────────────────
+    if nothing {
+        println!("\n  Nothing selected — exiting.");
+        return Ok(());
+    }
+
+    println!();
+    let save_build = inquire::Confirm::new("Save this configuration as a reusable build?")
+        .with_default(false)
+        .prompt()?;
+
+    if save_build {
+        let name = Text::new("  Build name").prompt()?;
+        let description = Text::new("  Description (optional)")
+            .with_default("")
+            .prompt()?;
+        let desc_ref = if description.is_empty() {
+            None
+        } else {
+            Some(description.as_str())
+        };
+        builds::capture_current_config(&name, desc_ref)
+            .and_then(|b| {
+                let dir = builds::builds_dir()?;
+                fs::create_dir_all(&dir)?;
+                let path = dir.join(format!("{name}.toml"));
+                let content = toml::to_string_pretty(&b)?;
+                fs::write(&path, content)?;
+                println!("  ✓ Build '{name}' saved");
+                Ok(())
+            })
+            .unwrap_or_else(|e| {
+                println!("  ⚠ Failed to save build: {e}");
+            });
     }
 
     println!("\n  Done\n");

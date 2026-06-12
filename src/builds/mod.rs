@@ -91,7 +91,7 @@ fn default_scope() -> String {
     "local".to_string()
 }
 
-fn builds_dir() -> Result<PathBuf> {
+pub(crate) fn builds_dir() -> Result<PathBuf> {
     let home = std::env::var("HOME").context("HOME environment variable not set")?;
     Ok(PathBuf::from(home).join(".gitkit").join("builds"))
 }
@@ -262,7 +262,7 @@ fn save(name: &str, description: Option<&str>) -> Result<()> {
         anyhow::bail!("Build '{name}' already exists. Delete it first or choose another name.");
     }
 
-    let build = capture_current_config(name, description.unwrap_or(""))?;
+    let build = capture_current_config(name, description)?;
 
     let dir = builds_dir()?;
     fs::create_dir_all(&dir).context("Failed to create builds directory")?;
@@ -274,7 +274,7 @@ fn save(name: &str, description: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn capture_current_config(name: &str, description: &str) -> Result<Build> {
+pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> Result<Build> {
     let root = crate::utils::find_repo_root()?;
 
     let mut builtins = Vec::new();
@@ -328,7 +328,7 @@ pub(crate) fn capture_current_config(name: &str, description: &str) -> Result<Bu
 
     Ok(Build {
         name: name.to_string(),
-        description: description.to_string(),
+        description: description.unwrap_or("").to_string(),
         hooks: HooksConfig {
             builtins,
             custom: Vec::new(),

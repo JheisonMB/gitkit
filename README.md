@@ -37,6 +37,7 @@ Set up a git repo the way you actually work — one guided flow for hooks, `.git
 - **🧰 Hook management** — Install, list, show, or remove built-in hooks, or wire up your own command.
 - **🧩 Ignore and attribute presets** — Browse built-in and gitignore.io templates, then apply line-ending or binary presets.
 - **⚙️ Curated git config** — Apply practical presets with `--global` or `--local` scope, with idempotency detection.
+- **💾 Save & reuse builds** — Save configurations and apply them to any project with one command.
 - **📦 Single binary** — No Node.js, no Python, no extra runtime.
 
 ---
@@ -258,6 +259,30 @@ $ gitkit config apply defaults --global
 
 All configs already applied.
 ```
+
+### Build
+
+Save and reuse configurations across projects.
+
+| Command | Description |
+|---|---|
+| `gitkit build list` | List saved builds |
+| `gitkit build save <name>` | Save current repo config as a build |
+| `gitkit build apply <name>` | Apply a saved build |
+| `gitkit build delete <name>` | Delete a saved build |
+
+**Example:**
+
+```bash
+# Save current configuration
+gitkit build save rust-dev --description "Rust development setup"
+
+# Apply to another project
+cd /path/to/other/project
+gitkit build apply rust-dev
+```
+
+Builds are saved to `~/.gitkit/builds/` as TOML files.
 
 ---
 
