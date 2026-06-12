@@ -83,10 +83,7 @@ pub(crate) fn valid_hook_names() -> &'static [&'static str] {
 
 /// Identifies which built-in (if any) an installed hook file corresponds to,
 /// by exact script comparison. Built-ins are written verbatim on install.
-pub(crate) fn detect_builtin(
-    hook_file: &str,
-    content: &str,
-) -> Option<&'static builtins::Builtin> {
+pub(crate) fn detect_builtin(hook_file: &str, content: &str) -> Option<&'static builtins::Builtin> {
     builtins::ALL
         .iter()
         .find(|b| b.hook == hook_file && content.trim() == b.script.trim())

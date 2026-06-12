@@ -38,7 +38,10 @@ pub fn run() -> Result<()> {
             .with_help_message("↑↓ move  enter confirm  esc start fresh")
             .prompt_skippable()?;
 
-        if let Some(build_name) = choice.as_deref().and_then(|c| c.strip_prefix("Use build: ")) {
+        if let Some(build_name) = choice
+            .as_deref()
+            .and_then(|c| c.strip_prefix("Use build: "))
+        {
             println!();
             let build = builds::load_build(build_name)?;
             builds::apply_build(&build)?;
@@ -95,8 +98,8 @@ pub fn run() -> Result<()> {
 
     for item in &hook_selections {
         if item == "Add custom hook..." {
-            let Some(hook_name) = Select::new("Hook type", hooks::valid_hook_names().to_vec())
-                .prompt_skippable()?
+            let Some(hook_name) =
+                Select::new("Hook type", hooks::valid_hook_names().to_vec()).prompt_skippable()?
             else {
                 continue;
             };

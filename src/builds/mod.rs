@@ -499,7 +499,10 @@ description = ""
     #[test]
     fn extract_custom_command_recovers_command() {
         let script = "#!/bin/sh\nset -e\ncargo test\n";
-        assert_eq!(extract_custom_command(script).as_deref(), Some("cargo test"));
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("cargo test")
+        );
     }
 
     #[test]
