@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::fs;
 
-use crate::hooks::builtins;
 use crate::utils::{find_repo_root, git_config_get};
 
 pub fn run() -> Result<()> {
@@ -52,17 +51,7 @@ fn print_hooks() -> Result<()> {
         let hook_name = entry.file_name().to_string_lossy().to_string();
         let content = fs::read_to_string(entry.path()).unwrap_or_default();
 
-        let builtin_match = builtins::ALL.iter().find(|b| {
-            b.hook == hook_name
-                && b.script
-                    .chars()
-                    .take(80)
-                    .collect::<String>()
-                    .chars()
-                    .all(|c| content.contains(c))
-        });
-
-        match builtin_match {
+        match crate::hooks::detect_builtin(&hook_name, &content) {
             Some(b) => println!("  ✓ {} ({})", b.name, b.hook),
             None => {
                 let first_cmd = content
@@ -143,18 +132,10 @@ fn print_config(scope: &str) -> Result<()> {
         "--local"
     };
 
-    let configs = [
-        ("push.autoSetupRemote", "true"),
-        ("help.autocorrect", "prompt"),
-        ("diff.algorithm", "histogram"),
-        ("merge.conflictstyle", "zdiff3"),
-        ("rerere.enabled", "true"),
-    ];
-
     let mut any = false;
-    for (key, _expected) in &configs {
-        if let Some(value) = git_config_get(key, scope_flag) {
-            println!("  ✓ {key} = {value}");
+    for option in crate::config::CONFIG_OPTIONS {
+        if let Some(value) = git_config_get(option.key, scope_flag) {
+            println!("  ✓ {} = {value}", option.key);
             any = true;
         }
     }

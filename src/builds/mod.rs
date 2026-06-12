@@ -92,11 +92,17 @@ fn default_scope() -> String {
 }
 
 pub(crate) fn builds_dir() -> Result<PathBuf> {
-    let home = std::env::var("HOME").context("HOME environment variable not set")?;
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .context("Neither HOME nor USERPROFILE environment variable is set")?;
     Ok(PathBuf::from(home).join(".gitkit").join("builds"))
 }
 
 fn build_path(name: &str) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != "..",
+        "Invalid build name '{name}' — use a simple name without path separators"
+    );
     Ok(builds_dir()?.join(format!("{name}.toml")))
 }
 
@@ -256,7 +262,7 @@ pub(crate) fn apply_build(build: &Build) -> Result<()> {
     Ok(())
 }
 
-fn save(name: &str, description: Option<&str>) -> Result<()> {
+pub(crate) fn save(name: &str, description: Option<&str>) -> Result<()> {
     let path = build_path(name)?;
     if path.exists() {
         anyhow::bail!("Build '{name}' already exists. Delete it first or choose another name.");
@@ -278,21 +284,29 @@ pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> R
     let root = crate::utils::find_repo_root()?;
 
     let mut builtins = Vec::new();
+    let mut custom = Vec::new();
     let hooks_dir = root.join(".git").join("hooks");
     if hooks_dir.exists() {
         if let Ok(entries) = fs::read_dir(&hooks_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
                 let hook_name = entry.file_name().to_string_lossy().to_string();
                 if hook_name.ends_with(".bak") || hook_name.ends_with(".sample") {
                     continue;
                 }
-                let content = fs::read_to_string(entry.path()).unwrap_or_default();
-                let prefix: String = content.chars().take(80).collect();
-                if let Some(b) = crate::hooks::available_builtins()
-                    .iter()
-                    .find(|b| b.hook == hook_name && content.contains(&prefix))
-                {
+                let content = fs::read_to_string(&path).unwrap_or_default();
+                if let Some(b) = crate::hooks::detect_builtin(&hook_name, &content) {
                     builtins.push(b.name.to_string());
+                } else if crate::hooks::valid_hook_names().contains(&hook_name.as_str()) {
+                    if let Some(command) = extract_custom_command(&content) {
+                        custom.push(CustomHook {
+                            hook: hook_name,
+                            command,
+                        });
+                    }
                 }
             }
         }
@@ -329,10 +343,7 @@ pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> R
     Ok(Build {
         name: name.to_string(),
         description: description.unwrap_or("").to_string(),
-        hooks: HooksConfig {
-            builtins,
-            custom: Vec::new(),
-        },
+        hooks: HooksConfig { builtins, custom },
         gitignore: GitignoreConfig { templates },
         gitattributes: GitattributesConfig { presets },
         config: ConfigBuild {
@@ -340,6 +351,23 @@ pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> R
             scope: "local".to_string(),
         },
     })
+}
+
+/// Recovers the command from a custom hook script (shebang + `set -e` + command).
+fn extract_custom_command(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with('#') && t != "set -e"
+        })
+        .collect();
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
 }
 
 fn detect_gitignore_templates(content: &str) -> Vec<String> {
@@ -381,7 +409,6 @@ fn delete(name: &str) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub(crate) fn list_build_names() -> Vec<String> {
     builds_dir()
         .ok()
@@ -401,7 +428,6 @@ pub(crate) fn list_build_names() -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[allow(dead_code)]
 pub(crate) fn load_build(name: &str) -> Result<Build> {
     let path = build_path(name)?;
     anyhow::ensure!(path.exists(), "Build '{name}' not found");
@@ -468,5 +494,24 @@ description = ""
         let content = "* text=auto eol=lf\n";
         let presets = detect_gitattributes_presets(content);
         assert!(presets.contains(&"line-endings".to_string()));
+    }
+
+    #[test]
+    fn extract_custom_command_recovers_command() {
+        let script = "#!/bin/sh\nset -e\ncargo test\n";
+        assert_eq!(extract_custom_command(script).as_deref(), Some("cargo test"));
+    }
+
+    #[test]
+    fn extract_custom_command_returns_none_for_empty_script() {
+        assert!(extract_custom_command("#!/bin/sh\nset -e\n").is_none());
+    }
+
+    #[test]
+    fn build_path_rejects_invalid_names() {
+        assert!(build_path("").is_err());
+        assert!(build_path("../evil").is_err());
+        assert!(build_path("a/b").is_err());
+        assert!(build_path("ok-name").is_ok());
     }
 }

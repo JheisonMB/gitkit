@@ -81,6 +81,17 @@ pub(crate) fn valid_hook_names() -> &'static [&'static str] {
     VALID_HOOKS
 }
 
+/// Identifies which built-in (if any) an installed hook file corresponds to,
+/// by exact script comparison. Built-ins are written verbatim on install.
+pub(crate) fn detect_builtin(
+    hook_file: &str,
+    content: &str,
+) -> Option<&'static builtins::Builtin> {
+    builtins::ALL
+        .iter()
+        .find(|b| b.hook == hook_file && content.trim() == b.script.trim())
+}
+
 fn hooks_dir() -> Result<std::path::PathBuf> {
     Ok(find_repo_root()?.join(".git").join("hooks"))
 }
@@ -293,5 +304,26 @@ mod tests {
     fn resolve_hook_errors_on_unknown_builtin_without_command() {
         let err = resolve_hook("unknown-builtin", None).unwrap_err();
         assert!(err.to_string().contains("not a built-in"));
+    }
+
+    #[test]
+    fn detect_builtin_distinguishes_builtins_sharing_a_hook_file() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let branch_naming = builtins::get("branch-naming").unwrap();
+        assert_eq!(
+            detect_builtin("pre-commit", no_secrets.script).map(|b| b.name),
+            Some("no-secrets")
+        );
+        assert_eq!(
+            detect_builtin("pre-commit", branch_naming.script).map(|b| b.name),
+            Some("branch-naming")
+        );
+    }
+
+    #[test]
+    fn detect_builtin_rejects_custom_scripts_and_wrong_hook() {
+        assert!(detect_builtin("pre-commit", "#!/bin/sh\nset -e\ncargo test\n").is_none());
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        assert!(detect_builtin("commit-msg", no_secrets.script).is_none());
     }
 }

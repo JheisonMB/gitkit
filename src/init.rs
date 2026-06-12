@@ -35,12 +35,10 @@ pub fn run() -> Result<()> {
         options.extend(saved_builds.iter().map(|b| format!("Use build: {b}")));
 
         let choice = Select::new("Saved builds available", options)
-            .with_help_message("↑↓ move  enter confirm")
-            .prompt_skippable()?
-            .unwrap_or_default();
+            .with_help_message("↑↓ move  enter confirm  esc start fresh")
+            .prompt_skippable()?;
 
-        if choice != "Start fresh configuration" {
-            let build_name = choice.strip_prefix("Use build: ").unwrap_or(&choice);
+        if let Some(build_name) = choice.as_deref().and_then(|c| c.strip_prefix("Use build: ")) {
             println!();
             let build = builds::load_build(build_name)?;
             builds::apply_build(&build)?;
@@ -97,10 +95,17 @@ pub fn run() -> Result<()> {
 
     for item in &hook_selections {
         if item == "Add custom hook..." {
-            let hook_name = Select::new("Hook type", hooks::valid_hook_names().to_vec())
-                .prompt()
-                .map_err(|e| anyhow::anyhow!("Hook selection cancelled: {}", e))?;
-            let command = Text::new("  Command to run").prompt()?;
+            let Some(hook_name) = Select::new("Hook type", hooks::valid_hook_names().to_vec())
+                .prompt_skippable()?
+            else {
+                continue;
+            };
+            let command = Text::new("  Command to run")
+                .prompt_skippable()?
+                .unwrap_or_default();
+            if command.trim().is_empty() {
+                continue;
+            }
             custom_hooks.push((hook_name.to_string(), command));
         } else if let Some(idx) = hook_items.iter().position(|i| i == item) {
             if idx < builtins.len() {
@@ -170,7 +175,7 @@ pub fn run() -> Result<()> {
     let defaults: Vec<usize> = config_options
         .iter()
         .enumerate()
-        .filter(|(_, o)| o.recommended)
+        .filter(|(_, o)| o.recommended || configured_keys.contains(o.key))
         .map(|(i, _)| i)
         .collect();
 
@@ -247,6 +252,16 @@ pub fn run() -> Result<()> {
     }
     for hook in &hooks_to_remove {
         if let Some(builtin) = hooks::available_builtins().iter().find(|b| b.name == *hook) {
+            // Several built-ins can share a hook file (e.g. pre-commit); don't
+            // delete the file if a freshly installed selection now owns it.
+            let file_reused = selected_builtins.iter().any(|sel| {
+                hooks::available_builtins()
+                    .iter()
+                    .any(|b| b.name == *sel && b.hook == builtin.hook)
+            });
+            if file_reused {
+                continue;
+            }
             if hooks::remove_hook(builtin.hook, true).is_ok() {
                 println!("  ◇ hook '{hook}' removed  ✓");
             }
@@ -269,20 +284,19 @@ pub fn run() -> Result<()> {
         )?;
         println!("  ◇ git config applied  ✓");
     }
+    // Only touch the repo's local config; a global value affects every repo,
+    // so it is never removed from here.
     for key in &configs_to_remove {
-        let removed = config::remove_config_key(key, config::ConfigScope::Local).is_ok()
-            || config::remove_config_key(key, config::ConfigScope::Global).is_ok();
-        if removed {
+        if config::remove_config_key(key, config::ConfigScope::Local).is_ok() {
             println!("  ◇ git config '{key}' removed  ✓");
+        } else {
+            println!(
+                "  ◇ git config '{key}' is set globally — left untouched (git config --global --unset {key})"
+            );
         }
     }
 
     // ── Save as build ─────────────────────────────────────────────────────
-    if nothing {
-        println!("\n  Nothing selected — exiting.");
-        return Ok(());
-    }
-
     println!();
     let save_build = inquire::Confirm::new("Save this configuration as a reusable build?")
         .with_default(false)
@@ -298,19 +312,9 @@ pub fn run() -> Result<()> {
         } else {
             Some(description.as_str())
         };
-        builds::capture_current_config(&name, desc_ref)
-            .and_then(|b| {
-                let dir = builds::builds_dir()?;
-                fs::create_dir_all(&dir)?;
-                let path = dir.join(format!("{name}.toml"));
-                let content = toml::to_string_pretty(&b)?;
-                fs::write(&path, content)?;
-                println!("  ✓ Build '{name}' saved");
-                Ok(())
-            })
-            .unwrap_or_else(|e| {
-                println!("  ⚠ Failed to save build: {e}");
-            });
+        if let Err(e) = builds::save(&name, desc_ref) {
+            println!("  ⚠ Failed to save build: {e}");
+        }
     }
 
     println!("\n  Done\n");
@@ -331,16 +335,7 @@ fn get_installed_hooks() -> HashSet<String> {
                     let name = entry.file_name().to_string_lossy().to_string();
                     if !name.ends_with(".bak") && !name.ends_with(".sample") {
                         let content = fs::read_to_string(entry.path()).unwrap_or_default();
-                        let builtin_match = hooks::available_builtins().iter().find(|b| {
-                            b.hook == name
-                                && b.script
-                                    .chars()
-                                    .take(80)
-                                    .collect::<String>()
-                                    .chars()
-                                    .all(|c| content.contains(c))
-                        });
-                        if let Some(b) = builtin_match {
+                        if let Some(b) = hooks::detect_builtin(&name, &content) {
                             installed.insert(b.name.to_string());
                         }
                     }
@@ -416,10 +411,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_configured_keys_works() {
+    fn get_configured_keys_only_returns_known_option_keys() {
         let configured = get_configured_keys();
-        // Just verify it doesn't panic and returns a valid HashSet
-        assert!(configured.len() >= 0);
+        for key in &configured {
+            assert!(config::CONFIG_OPTIONS.iter().any(|o| o.key == key));
+        }
     }
 
     #[test]
