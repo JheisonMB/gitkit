@@ -1,0 +1,380 @@
+[demo]
+name = "demo"
+output_dir = "./dist"
+prompt = '\[\e[1;32m\]gitkit@demo\[\e[0m\]:\[\e[1;34m\]~\[\e[0m\]$ '
+
+[typing]
+base_ms = 80
+salt_ms = 15
+
+[layout]
+width = 740
+height = 920
+fps = 15
+line_height = 1.2000000476837158
+background = "#0b0f14"
+
+[[layout.panes]]
+id = "main"
+type = "terminal"
+x = 0
+y = 0
+width = 740
+height = 920
+font_family = "monospace"
+font_size = 16
+
+[[timeline]]
+action = "focus"
+pane = "main"
+
+[[timeline]]
+action = "type"
+text = "gitkit"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1051
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 639
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 576
+
+[[timeline]]
+action = "keypress"
+key = "up"
+
+[[timeline]]
+action = "wait"
+duration_ms = 485
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 1091
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 282
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 833
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 893
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1275
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 253
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 277
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 301
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1616
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 198
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 357
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 681
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 584
+
+[[timeline]]
+action = "type"
+text = "cargo test"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 798
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2356
+
+[[timeline]]
+action = "type"
+text = " rust "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 733
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 370
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 527
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 875
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 739
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1181
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 230
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 238
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 225
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 185
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 410
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 664
+
+[[timeline]]
+action = "keypress"
+key = "up"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2127
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 595
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1467
+
+[[timeline]]
+action = "type"
+text = "y"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 272
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "type"
+text = "n"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 314
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1500
+
+[[timeline]]
+action = "terminate"
