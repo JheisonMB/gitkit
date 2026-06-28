@@ -175,29 +175,34 @@ pub(crate) fn apply_config_keys(
 ) -> Result<()> {
     for key in keys {
         match *key {
-            "core.pager" => {
-                anyhow::ensure!(
-                    cargo_available,
-                    "cargo not found — cannot install git-delta"
-                );
-                if !delta_installed() {
-                    install_delta()?;
-                }
-                for (k, v) in DELTA_CONFIGS {
-                    git_config_set(k, v, scope)?;
-                }
-            }
-            _ => {
-                let value = CONFIG_OPTIONS
-                    .iter()
-                    .find(|o| o.key == *key)
-                    .and_then(|o| o.value)
-                    .ok_or_else(|| anyhow::anyhow!("Unknown config key: {key}"))?;
-                git_config_set(key, value, scope)?;
-            }
+            "core.pager" => apply_pager_config(cargo_available, scope)?,
+            _ => apply_single_config(key, scope)?,
         }
     }
     Ok(())
+}
+
+fn apply_pager_config(cargo_available: bool, scope: ConfigScope) -> Result<()> {
+    anyhow::ensure!(
+        cargo_available,
+        "cargo not found — cannot install git-delta"
+    );
+    if !delta_installed() {
+        install_delta()?;
+    }
+    for (k, v) in DELTA_CONFIGS {
+        git_config_set(k, v, scope)?;
+    }
+    Ok(())
+}
+
+fn apply_single_config(key: &str, scope: ConfigScope) -> Result<()> {
+    let value = CONFIG_OPTIONS
+        .iter()
+        .find(|o| o.key == key)
+        .and_then(|o| o.value)
+        .ok_or_else(|| anyhow::anyhow!("Unknown config key: {key}"))?;
+    git_config_set(key, value, scope)
 }
 
 type GitConfigs = &'static [(&'static str, &'static str)];
