@@ -113,6 +113,11 @@ gitkit attributes init
 gitkit config apply defaults
 ```
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/): installation, quick start,
+hooks, ignore & attributes, config presets, builds and the complete CLI reference.
+
 ---
 
 ## `gitkit status`
@@ -316,4 +321,5 @@ MIT
 
 ---
 
-Made with ❤️ by [JheisonMB](https://github.com/JheisonMB) and [UniverLab](https://github.com/UniverLab)
+An experiment of [UniverLab](https://github.com/UniverLab) — an open computational laboratory.
+Made with ❤️ by [JheisonMB](https://github.com/JheisonMB)

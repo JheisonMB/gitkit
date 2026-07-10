@@ -1,0 +1,224 @@
+[demo]
+name = "demo"
+output_dir = "./dist"
+prompt = '\[\e[1;32m\]gitkit@univerlab\[\e[0m\]:\[\e[1;34m\]~\[\e[0m\]$ '
+
+[typing]
+base_ms = 80
+salt_ms = 15
+
+[layout]
+width = 1440
+height = 1080
+fps = 15
+line_height = 1.2000000476837158
+background = "#0b0f14"
+font_family = "IBM Plex Mono"
+
+[[layout.panes]]
+id = "main"
+type = "terminal"
+x = 0
+y = 0
+width = 1440
+height = 1080
+font_family = "monospace"
+font_size = 16
+
+[[timeline]]
+action = "focus"
+pane = "main"
+
+[[timeline]]
+action = "type"
+text = "gitkit clone https://github.com/Univerlab/gitkit.git"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 1500
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 349
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 1316
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 2295
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 2500
+
+[[timeline]]
+action = "type"
+text = "  "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 500
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 1500
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 180
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 180
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 174
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 183
+
+[[timeline]]
+action = "keypress"
+key = "down"
+
+[[timeline]]
+action = "wait"
+duration_ms = 452
+
+[[timeline]]
+action = "type"
+text = " "
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 1500
+
+[[timeline]]
+action = "type"
+text = "y"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 1500
+
+[[timeline]]
+action = "type"
+text = "n"
+human_salt = true
+
+[[timeline]]
+action = "wait"
+duration_ms = 200
+
+[[timeline]]
+action = "keypress"
+key = "enter"
+
+[[timeline]]
+action = "wait_for_quiet"
+quiet_ms = 1500
+
+[[timeline]]
+action = "terminate"

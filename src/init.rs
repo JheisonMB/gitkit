@@ -329,24 +329,28 @@ fn load_ignore_templates() -> Vec<String> {
 }
 
 fn get_installed_hooks() -> HashSet<String> {
-    let mut installed = HashSet::new();
-    if let Ok(root) = find_repo_root() {
-        let hooks_dir = root.join(".git").join("hooks");
-        if hooks_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&hooks_dir) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if !name.ends_with(".bak") && !name.ends_with(".sample") {
-                        let content = fs::read_to_string(entry.path()).unwrap_or_default();
-                        if let Some(b) = hooks::detect_builtin(&name, &content) {
-                            installed.insert(b.name.to_string());
-                        }
-                    }
-                }
-            }
-        }
+    let Ok(root) = find_repo_root() else {
+        return HashSet::new();
+    };
+    let hooks_dir = root.join(".git").join("hooks");
+    if !hooks_dir.exists() {
+        return HashSet::new();
     }
-    installed
+    let Ok(entries) = fs::read_dir(&hooks_dir) else {
+        return HashSet::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            !name.ends_with(".bak") && !name.ends_with(".sample")
+        })
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let content = fs::read_to_string(e.path()).unwrap_or_default();
+            hooks::detect_builtin(&name, &content).map(|b| b.name.to_string())
+        })
+        .collect()
 }
 
 fn get_configured_keys() -> HashSet<String> {
@@ -373,23 +377,22 @@ fn get_configured_keys() -> HashSet<String> {
 }
 
 fn get_all_git_configs(scope: &str) -> std::collections::HashMap<String, String> {
-    let mut configs = std::collections::HashMap::new();
-
-    if let Ok(output) = std::process::Command::new("git")
+    let Ok(output) = std::process::Command::new("git")
         .args(["config", scope, "--list"])
         .output()
-    {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    configs.insert(key.to_string(), value.to_string());
-                }
-            }
-        }
+    else {
+        return std::collections::HashMap::new();
+    };
+    if !output.status.success() {
+        return std::collections::HashMap::new();
     }
-
-    configs
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            line.split_once('=')
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+        })
+        .collect()
 }
 
 /// Maps selected display labels back to their corresponding keys.
