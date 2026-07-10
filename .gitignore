@@ -1,5 +1,4 @@
 /target
-Cargo.lock
 *.swp
 *.swo
 *~
@@ -18,3 +17,5 @@ skills-lock.json
 # already existing elements were commented out
 
 #/target
+*.mp4
+.mimocode/
