@@ -242,6 +242,104 @@ mod tests {
         assert!(result.contains(".kiro/"));
         assert!(result.contains(".cursor/"));
     }
+
+    #[test]
+    fn resolve_templates_multiple_builtins_combined() {
+        let result = resolve_templates("agentic,agentic").unwrap();
+        assert!(result.contains(".kiro/"));
+    }
+
+    #[test]
+    fn merge_gitignore_only_comments_appended() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "# just a comment\n# another\n";
+        let result = merge_gitignore(&path, new);
+        assert!(result.contains("# just a comment"));
+        assert!(result.contains("target/"));
+    }
+
+    #[test]
+    fn merge_gitignore_only_blank_lines_appended() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "\n\n\n";
+        let result = merge_gitignore(&path, new);
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_mixed_new_and_existing_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n*.log\n");
+        let new = "*.log\n*.tmp\n";
+        let result = merge_gitignore(&path, new);
+        assert_eq!(result.matches("*.log").count(), 1);
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_file_not_ending_with_newline() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "target/").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_empty_new_content() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_empty_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result, "*.log\n");
+    }
+
+    #[test]
+    fn merge_gitignore_preserves_blank_line_separators() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "\n*.log\n\n*.tmp\n";
+        let result = merge_gitignore(&path, new);
+        assert!(result.contains("*.log"));
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn add_templates_rejects_invalid_input_gracefully() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        // Write a file to ensure merge_gitignore has something to work with
+        fs::write(&path, "existing\n").unwrap();
+        let result = merge_gitignore(&path, "existing\nnew_pattern\n");
+        assert!(result.contains("new_pattern"));
+        assert_eq!(result.matches("existing").count(), 1);
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_unknown() {
+        assert!(builtins::get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn builtins_get_returns_agentic() {
+        assert!(builtins::get("agentic").is_some());
+    }
+
+    #[test]
+    fn builtins_names_contains_agentic() {
+        assert!(builtins::NAMES.contains(&"agentic"));
+    }
+
+    #[test]
+    fn api_base_is_correct() {
+        assert_eq!(API_BASE, "https://www.toptal.com/developers/gitignore/api");
+    }
 }
 
 mod builtins {

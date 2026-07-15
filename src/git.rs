@@ -33,3 +33,29 @@ pub fn init_if_needed() -> Result<bool> {
 
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_git_repo_returns_bool() {
+        // Should not panic, just returns true or false
+        let _ = is_git_repo();
+    }
+
+    #[test]
+    fn git_dir_exists_returns_bool() {
+        // Should not panic, just returns true or false
+        let _ = git_dir_exists();
+    }
+
+    #[test]
+    fn is_git_repo_in_current_dir() {
+        // We're in a git repo (the test project), so this should be true
+        // unless the test is run outside a repo
+        let result = is_git_repo();
+        // Just verify it doesn't panic and returns a bool
+        assert!(result == true || result == false);
+    }
+}

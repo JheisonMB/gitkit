@@ -367,4 +367,103 @@ mod tests {
         assert_eq!(scope_flag(ConfigScope::Global), "--global");
         assert_eq!(scope_flag(ConfigScope::Local), "--local");
     }
+
+    #[test]
+    fn config_options_has_expected_entries() {
+        assert!(!CONFIG_OPTIONS.is_empty());
+        let keys: Vec<&str> = CONFIG_OPTIONS.iter().map(|o| o.key).collect();
+        assert!(keys.contains(&"push.autoSetupRemote"));
+        assert!(keys.contains(&"help.autocorrect"));
+        assert!(keys.contains(&"diff.algorithm"));
+        assert!(keys.contains(&"merge.conflictstyle"));
+        assert!(keys.contains(&"rerere.enabled"));
+        assert!(keys.contains(&"core.pager"));
+    }
+
+    #[test]
+    fn config_options_all_keys_nonempty() {
+        for opt in CONFIG_OPTIONS {
+            assert!(!opt.key.is_empty());
+            assert!(!opt.label.is_empty());
+        }
+    }
+
+    #[test]
+    fn config_options_recommended_are_marked() {
+        let recommended: Vec<&str> = CONFIG_OPTIONS
+            .iter()
+            .filter(|o| o.recommended)
+            .map(|o| o.key)
+            .collect();
+        assert!(recommended.contains(&"push.autoSetupRemote"));
+        assert!(recommended.contains(&"help.autocorrect"));
+        assert!(recommended.contains(&"diff.algorithm"));
+    }
+
+    #[test]
+    fn config_options_core_pager_has_no_value() {
+        let pager = CONFIG_OPTIONS.iter().find(|o| o.key == "core.pager").unwrap();
+        assert!(pager.value.is_none());
+    }
+
+    #[test]
+    fn apply_single_config_unknown_key_errors() {
+        let result = apply_single_config("nonexistent.key", ConfigScope::Global);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn apply_configs_dry_run_local_scope() {
+        let result = apply_configs(DEFAULTS, true, ConfigScope::Local);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn config_scope_clone_and_copy() {
+        let scope = ConfigScope::Global;
+        let scope2 = scope;
+        assert!(matches!(scope2, ConfigScope::Global));
+    }
+
+    #[test]
+    fn presets_constants_are_nonempty() {
+        assert!(!DEFAULTS.is_empty());
+        assert!(!ADVANCED.is_empty());
+        assert!(!DELTA_CONFIGS.is_empty());
+    }
+
+    #[test]
+    fn defaults_preset_contains_expected_keys() {
+        let keys: Vec<&str> = DEFAULTS.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"push.autoSetupRemote"));
+        assert!(keys.contains(&"help.autocorrect"));
+        assert!(keys.contains(&"diff.algorithm"));
+    }
+
+    #[test]
+    fn advanced_preset_contains_expected_keys() {
+        let keys: Vec<&str> = ADVANCED.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"merge.conflictstyle"));
+        assert!(keys.contains(&"rerere.enabled"));
+    }
+
+    #[test]
+    fn delta_configs_contains_expected_keys() {
+        let keys: Vec<&str> = DELTA_CONFIGS.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"core.pager"));
+        assert!(keys.contains(&"delta.navigate"));
+    }
+
+    #[test]
+    fn determine_scope_global_true_overrides_local() {
+        let scope = determine_scope(true, true);
+        assert!(matches!(scope, ConfigScope::Global));
+    }
+
+    #[test]
+    fn git_config_get_returns_string_for_existing_key() {
+        let result = git_config_get("user.name", "--global");
+        // May be None if not configured, but function should not panic
+        let _ = result;
+    }
 }

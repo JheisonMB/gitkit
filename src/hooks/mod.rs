@@ -323,4 +323,61 @@ mod tests {
         let no_secrets = builtins::get("no-secrets").unwrap();
         assert!(detect_builtin("commit-msg", no_secrets.script).is_none());
     }
+
+    #[test]
+    fn valid_hook_names_contains_expected_hooks() {
+        assert!(VALID_HOOKS.contains(&"pre-commit"));
+        assert!(VALID_HOOKS.contains(&"commit-msg"));
+        assert!(VALID_HOOKS.contains(&"pre-push"));
+        assert!(VALID_HOOKS.contains(&"prepare-commit-msg"));
+    }
+
+    #[test]
+    fn available_builtins_returns_nonempty() {
+        let builtins = available_builtins();
+        assert!(!builtins.is_empty());
+    }
+
+    #[test]
+    fn available_builtins_all_have_names() {
+        for b in available_builtins() {
+            assert!(!b.name.is_empty());
+            assert!(!b.hook.is_empty());
+            assert!(!b.description.is_empty());
+            assert!(!b.script.is_empty());
+        }
+    }
+
+    #[test]
+    fn builtins_all_share_common_hooks() {
+        // no-secrets and branch-naming both use pre-commit
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let branch_naming = builtins::get("branch-naming").unwrap();
+        assert_eq!(no_secrets.hook, "pre-commit");
+        assert_eq!(branch_naming.hook, "pre-commit");
+    }
+
+    #[test]
+    fn conventional_commits_uses_commit_msg() {
+        let cc = builtins::get("conventional-commits").unwrap();
+        assert_eq!(cc.hook, "commit-msg");
+    }
+
+    #[test]
+    fn resolve_hook_all_builtins_resolvable() {
+        for b in available_builtins() {
+            let result = resolve_hook(b.name, None);
+            assert!(result.is_ok(), "Failed to resolve builtin: {}", b.name);
+            let (hook, script) = result.unwrap();
+            assert_eq!(hook, b.hook);
+            assert!(script.starts_with("#!/bin/sh"));
+        }
+    }
+
+    #[test]
+    fn all_valid_hook_names_are_nonempty() {
+        for name in VALID_HOOKS {
+            assert!(!name.is_empty());
+        }
+    }
 }

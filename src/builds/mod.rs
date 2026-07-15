@@ -517,4 +517,180 @@ description = ""
         assert!(build_path("a/b").is_err());
         assert!(build_path("ok-name").is_ok());
     }
+
+    #[test]
+    fn build_path_rejects_dot_and_dotdot() {
+        assert!(build_path(".").is_err());
+        assert!(build_path("..").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_backslash() {
+        assert!(build_path("a\\b").is_err());
+    }
+
+    #[test]
+    fn detect_gitignore_templates_finds_node() {
+        let content = "# Node\nnode_modules/\n.env\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(templates.contains(&"node".to_string()));
+    }
+
+    #[test]
+    fn detect_gitignore_templates_finds_python() {
+        let content = "# Python\n__pycache__/\n*.pyc\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(templates.contains(&"python".to_string()));
+    }
+
+    #[test]
+    fn detect_gitignore_templates_finds_vscode() {
+        let content = "# VSCode\n.vscode/\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(templates.contains(&"vscode".to_string()));
+    }
+
+    #[test]
+    fn detect_gitignore_templates_finds_agentic() {
+        let content = "# AI\n.kiro/\n.cursor/\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(templates.contains(&"agentic".to_string()));
+    }
+
+    #[test]
+    fn detect_gitignore_templates_multiple_patterns() {
+        let content = "target/\nnode_modules/\n__pycache__/\n.vscode/\n.kiro/\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(templates.contains(&"rust".to_string()));
+        assert!(templates.contains(&"node".to_string()));
+        assert!(templates.contains(&"python".to_string()));
+        assert!(templates.contains(&"vscode".to_string()));
+        assert!(templates.contains(&"agentic".to_string()));
+    }
+
+    #[test]
+    fn detect_gitignore_templates_empty_content() {
+        let templates = detect_gitignore_templates("");
+        assert!(templates.is_empty());
+    }
+
+    #[test]
+    fn detect_gitattributes_presets_finds_binary_files() {
+        let content = "*.png binary\n*.jpg binary\n";
+        let presets = detect_gitattributes_presets(content);
+        assert!(presets.contains(&"binary-files".to_string()));
+    }
+
+    #[test]
+    fn detect_gitattributes_presets_finds_both() {
+        let content = "* text=auto eol=lf\n*.png binary\n";
+        let presets = detect_gitattributes_presets(content);
+        assert!(presets.contains(&"line-endings".to_string()));
+        assert!(presets.contains(&"binary-files".to_string()));
+    }
+
+    #[test]
+    fn detect_gitattributes_presets_empty_content() {
+        let presets = detect_gitattributes_presets("");
+        assert!(presets.is_empty());
+    }
+
+    #[test]
+    fn extract_custom_command_single_line() {
+        let script = "#!/bin/sh\necho hello\n";
+        assert_eq!(extract_custom_command(script).as_deref(), Some("echo hello"));
+    }
+
+    #[test]
+    fn extract_custom_command_only_shebang() {
+        let script = "#!/bin/sh\n";
+        assert!(extract_custom_command(script).is_none());
+    }
+
+    #[test]
+    fn extract_custom_command_with_comments() {
+        let script = "#!/bin/sh\n# this is a comment\necho test\n";
+        assert_eq!(extract_custom_command(script).as_deref(), Some("echo test"));
+    }
+
+    #[test]
+    fn extract_custom_command_multiple_non_comment_lines() {
+        let script = "#!/bin/sh\nset -e\ncd /tmp\nmake build\n";
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("cd /tmp\nmake build")
+        );
+    }
+
+    #[test]
+    fn build_serialize_roundtrip_complex() {
+        let build = Build {
+            name: "full-test".to_string(),
+            description: "A full test build".to_string(),
+            hooks: HooksConfig {
+                builtins: vec!["conventional-commits".to_string(), "no-secrets".to_string()],
+                custom: vec![CustomHook {
+                    hook: "pre-push".to_string(),
+                    command: "cargo test".to_string(),
+                }],
+            },
+            gitignore: GitignoreConfig {
+                templates: vec!["rust".to_string(), "node".to_string()],
+            },
+            gitattributes: GitattributesConfig {
+                presets: vec!["line-endings".to_string(), "binary-files".to_string()],
+            },
+            config: ConfigBuild {
+                keys: vec![
+                    "push.autoSetupRemote".to_string(),
+                    "diff.algorithm".to_string(),
+                ],
+                scope: "global".to_string(),
+            },
+        };
+
+        let toml_str = toml::to_string_pretty(&build).unwrap();
+        let parsed: Build = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.name, "full-test");
+        assert_eq!(parsed.hooks.builtins.len(), 2);
+        assert_eq!(parsed.hooks.custom.len(), 1);
+        assert_eq!(parsed.gitignore.templates.len(), 2);
+        assert_eq!(parsed.gitattributes.presets.len(), 2);
+        assert_eq!(parsed.config.keys.len(), 2);
+        assert_eq!(parsed.config.scope, "global");
+    }
+
+    #[test]
+    fn build_deserialize_minimal_with_all_defaults() {
+        let toml_str = r#"
+name = "minimal"
+"#;
+        let build: Build = toml::from_str(toml_str).unwrap();
+        assert_eq!(build.name, "minimal");
+        assert!(build.description.is_empty());
+        assert!(build.hooks.builtins.is_empty());
+        assert!(build.hooks.custom.is_empty());
+        assert!(build.gitignore.templates.is_empty());
+        assert!(build.gitattributes.presets.is_empty());
+        assert!(build.config.keys.is_empty());
+        assert_eq!(build.config.scope, "local");
+    }
+
+    #[test]
+    fn build_default_trait_impl() {
+        let config = ConfigBuild::default();
+        assert!(config.keys.is_empty());
+        assert_eq!(config.scope, "local");
+    }
+
+    #[test]
+    fn custom_hook_serializes() {
+        let hook = CustomHook {
+            hook: "pre-commit".to_string(),
+            command: "cargo fmt --check".to_string(),
+        };
+        let toml_str = toml::to_string(&hook).unwrap();
+        assert!(toml_str.contains("pre-commit"));
+        assert!(toml_str.contains("cargo fmt --check"));
+    }
 }

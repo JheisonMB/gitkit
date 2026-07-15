@@ -156,4 +156,23 @@ mod tests {
         let result = git_config_get("nonexistent.key.xyz", "--global");
         assert!(result.is_none());
     }
+
+    #[test]
+    fn git_config_get_accepts_global_scope() {
+        let _ = git_config_get("user.name", "--global");
+    }
+
+    #[test]
+    fn git_config_get_accepts_local_scope() {
+        let _ = git_config_get("user.name", "--local");
+    }
+
+    #[test]
+    fn git_config_get_returns_string_when_found() {
+        // user.name may or may not be set, but function should not panic
+        let result = git_config_get("user.name", "--global");
+        if let Some(val) = result {
+            assert!(!val.is_empty());
+        }
+    }
 }

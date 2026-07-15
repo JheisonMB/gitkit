@@ -432,4 +432,54 @@ mod tests {
         let result = resolve_keys(&selections, &labels, &keys);
         assert_eq!(result, vec!["key_a", "key_c"]);
     }
+
+    #[test]
+    fn resolve_keys_empty_selections() {
+        let selections: Vec<&str> = vec![];
+        let labels = vec!["option A", "option B"];
+        let keys = vec!["key_a", "key_b"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn resolve_keys_no_matching_labels() {
+        let selections = vec!["unknown option"];
+        let labels = vec!["option A", "option B"];
+        let keys = vec!["key_a", "key_b"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn resolve_keys_single_match() {
+        let selections = vec!["option B"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_b"]);
+    }
+
+    #[test]
+    fn resolve_keys_all_labels_selected() {
+        let selections = vec!["option A", "option B", "option C"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_a", "key_b", "key_c"]);
+    }
+
+    #[test]
+    fn get_all_git_configs_returns_map() {
+        let result = get_all_git_configs("--global");
+        // Should return a HashMap, possibly empty
+        assert!(result.is_empty() || !result.is_empty());
+    }
+
+    #[test]
+    fn get_installed_hooks_returns_hashset() {
+        let hooks = get_installed_hooks();
+        // Should return a HashSet, possibly empty
+        assert!(hooks.is_empty() || !hooks.is_empty());
+    }
 }

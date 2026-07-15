@@ -123,4 +123,105 @@ mod tests {
     fn attributes_binary_preset_marks_png() {
         assert!(PRESET_BINARY.contains("*.png binary"));
     }
+
+    #[test]
+    fn apply_presets_line_endings_writes_content() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "").unwrap();
+        // Temporarily change to the temp dir so find_repo_root works
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["line-endings"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("eol=lf"));
+    }
+
+    #[test]
+    fn apply_presets_binary_files_writes_content() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["binary-files"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("*.png binary"));
+    }
+
+    #[test]
+    fn apply_presets_both_presets() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["line-endings", "binary-files"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("eol=lf"));
+        assert!(content.contains("*.png binary"));
+    }
+
+    #[test]
+    fn apply_presets_skips_unknown_labels() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["unknown-preset"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn apply_presets_does_not_duplicate() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "* text=auto eol=lf\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["line-endings"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content.matches("eol=lf").count(), 1);
+    }
+
+    #[test]
+    fn apply_presets_appends_to_existing_content() {
+        let dir = make_git_repo();
+        let path = dir.path().join(".gitattributes");
+        fs::write(&path, "# custom\n*.txt text\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = apply_presets(&["line-endings"]);
+        std::env::set_current_dir(&original).unwrap();
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("# custom"));
+        assert!(content.contains("*.txt text"));
+        assert!(content.contains("eol=lf"));
+    }
+
+    #[test]
+    fn preset_binary_all_expected_extensions() {
+        let extensions = ["png", "jpg", "jpeg", "gif", "ico", "pdf", "zip", "tar", "gz", "wasm"];
+        for ext in &extensions {
+            assert!(PRESET_BINARY.contains(&format!("*.{ext} binary")));
+        }
+    }
+
+    #[test]
+    fn preset_lf_exact_content() {
+        assert_eq!(PRESET_LF, "* text=auto eol=lf\n");
+    }
 }
