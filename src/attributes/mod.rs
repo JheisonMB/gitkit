@@ -64,9 +64,8 @@ pub fn run(cmd: AttributesCommand) -> Result<()> {
     Ok(())
 }
 
-/// Apply one or more attribute presets by label. Used by the interactive wizard.
-pub(crate) fn apply_presets(labels: &[&str]) -> Result<()> {
-    let root = find_repo_root()?;
+/// Apply one or more attribute presets by label at a given root. Used by the interactive wizard.
+pub(crate) fn apply_presets_at(labels: &[&str], root: &std::path::Path) -> Result<()> {
     let path = root.join(".gitattributes");
     let existing = if path.exists() {
         fs::read_to_string(&path).unwrap_or_default()
@@ -89,6 +88,12 @@ pub(crate) fn apply_presets(labels: &[&str]) -> Result<()> {
     }
     fs::write(&path, content).context("Failed to write .gitattributes")?;
     Ok(())
+}
+
+/// Apply presets using CWD to find repo root.
+pub(crate) fn apply_presets(labels: &[&str]) -> Result<()> {
+    let root = find_repo_root()?;
+    apply_presets_at(labels, &root)
 }
 
 #[cfg(test)]
@@ -129,11 +134,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "").unwrap();
-        // Temporarily change to the temp dir so find_repo_root works
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["line-endings"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["line-endings"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("eol=lf"));
@@ -144,10 +145,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "").unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["binary-files"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["binary-files"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("*.png binary"));
@@ -158,10 +156,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "").unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["line-endings", "binary-files"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["line-endings", "binary-files"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("eol=lf"));
@@ -173,10 +168,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "").unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["unknown-preset"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["unknown-preset"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.is_empty());
@@ -187,10 +179,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "* text=auto eol=lf\n").unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["line-endings"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["line-endings"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content.matches("eol=lf").count(), 1);
@@ -201,10 +190,7 @@ mod tests {
         let dir = make_git_repo();
         let path = dir.path().join(".gitattributes");
         fs::write(&path, "# custom\n*.txt text\n").unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = apply_presets(&["line-endings"]);
-        std::env::set_current_dir(&original).unwrap();
+        let result = apply_presets_at(&["line-endings"], dir.path());
         assert!(result.is_ok());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("# custom"));
