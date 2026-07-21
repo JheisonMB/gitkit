@@ -56,6 +56,6 @@ mod tests {
         // unless the test is run outside a repo
         let result = is_git_repo();
         // Just verify it doesn't panic and returns a bool
-        assert!(result == true || result == false);
+        let _: bool = result;
     }
 }
