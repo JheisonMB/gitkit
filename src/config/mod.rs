@@ -402,7 +402,10 @@ mod tests {
 
     #[test]
     fn config_options_core_pager_has_no_value() {
-        let pager = CONFIG_OPTIONS.iter().find(|o| o.key == "core.pager").unwrap();
+        let pager = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "core.pager")
+            .unwrap();
         assert!(pager.value.is_none());
     }
 

@@ -214,7 +214,9 @@ mod tests {
 
     #[test]
     fn preset_binary_all_expected_extensions() {
-        let extensions = ["png", "jpg", "jpeg", "gif", "ico", "pdf", "zip", "tar", "gz", "wasm"];
+        let extensions = [
+            "png", "jpg", "jpeg", "gif", "ico", "pdf", "zip", "tar", "gz", "wasm",
+        ];
         for ext in &extensions {
             assert!(PRESET_BINARY.contains(&format!("*.{ext} binary")));
         }

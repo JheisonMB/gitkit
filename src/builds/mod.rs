@@ -598,7 +598,10 @@ description = ""
     #[test]
     fn extract_custom_command_single_line() {
         let script = "#!/bin/sh\necho hello\n";
-        assert_eq!(extract_custom_command(script).as_deref(), Some("echo hello"));
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("echo hello")
+        );
     }
 
     #[test]
