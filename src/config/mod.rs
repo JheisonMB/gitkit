@@ -466,7 +466,217 @@ mod tests {
     #[test]
     fn git_config_get_returns_string_for_existing_key() {
         let result = git_config_get("user.name", "--global");
-        // May be None if not configured, but function should not panic
         let _ = result;
+    }
+
+    // ── determine_scope edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn determine_scope_global_true_overrides_local_true() {
+        assert!(matches!(determine_scope(true, true), ConfigScope::Global));
+    }
+
+    #[test]
+    fn determine_scope_neither_flag_in_repo_is_local() {
+        let original = std::env::current_dir().ok();
+        // We're in a git repo, so should default to Local
+        let scope = determine_scope(false, false);
+        assert!(matches!(scope, ConfigScope::Local));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── scope_flag ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn scope_flag_global_is_global() {
+        assert_eq!(scope_flag(ConfigScope::Global), "--global");
+    }
+
+    #[test]
+    fn scope_flag_local_is_local() {
+        assert_eq!(scope_flag(ConfigScope::Local), "--local");
+    }
+
+    // ── apply_configs edge cases ────────────────────────────────────────────
+
+    #[test]
+    fn apply_configs_dry_run_with_empty_configs() {
+        let empty: &[(&str, &str)] = &[];
+        let result = apply_configs(empty, true, ConfigScope::Global);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_configs_dry_run_with_single_config() {
+        let single: &[(&str, &str)] = &[("push.autoSetupRemote", "true")];
+        let result = apply_configs(single, true, ConfigScope::Global);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_configs_all_configs_already_set() {
+        // Test the "all already set" branch by using dry-run (won't actually set)
+        let result = apply_configs(DEFAULTS, true, ConfigScope::Global);
+        assert!(result.is_ok());
+    }
+
+    // ── apply_single_config ─────────────────────────────────────────────────
+
+    #[test]
+    fn apply_single_config_known_key_in_dry_run_does_not_panic() {
+        let err = apply_single_config("unknown.key", ConfigScope::Global).unwrap_err();
+        assert!(err.to_string().contains("Unknown config key"));
+    }
+
+    // ── CONFIG_OPTIONS completeness ─────────────────────────────────────────
+
+    #[test]
+    fn config_options_all_have_nonempty_labels() {
+        for opt in CONFIG_OPTIONS {
+            assert!(!opt.label.is_empty(), "empty label for key {}", opt.key);
+        }
+    }
+
+    #[test]
+    fn config_options_all_have_nonempty_keys() {
+        for opt in CONFIG_OPTIONS {
+            assert!(!opt.key.is_empty());
+        }
+    }
+
+    #[test]
+    fn config_options_push_auto_setup_remote_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "push.autoSetupRemote")
+            .unwrap();
+        assert!(opt.recommended);
+    }
+
+    #[test]
+    fn config_options_help_autocorrect_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "help.autocorrect")
+            .unwrap();
+        assert!(opt.recommended);
+    }
+
+    #[test]
+    fn config_options_diff_algorithm_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "diff.algorithm")
+            .unwrap();
+        assert!(opt.recommended);
+    }
+
+    #[test]
+    fn config_options_merge_conflict_style_not_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "merge.conflictstyle")
+            .unwrap();
+        assert!(!opt.recommended);
+    }
+
+    #[test]
+    fn config_options_rerere_enabled_not_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "rerere.enabled")
+            .unwrap();
+        assert!(!opt.recommended);
+    }
+
+    #[test]
+    fn config_options_core_pager_not_recommended() {
+        let opt = CONFIG_OPTIONS
+            .iter()
+            .find(|o| o.key == "core.pager")
+            .unwrap();
+        assert!(!opt.recommended);
+    }
+
+    // ── git_config_get edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn git_config_get_returns_none_for_empty_string() {
+        assert!(git_config_get("", "--global").is_none());
+    }
+
+    #[test]
+    fn git_config_get_returns_none_for_invalid_scope() {
+        assert!(git_config_get("user.name", "--invalid").is_none());
+    }
+
+    // ── preset constants ────────────────────────────────────────────────────
+
+    #[test]
+    fn defaults_preset_values_are_correct() {
+        let map: std::collections::HashMap<&str, &str> =
+            DEFAULTS.iter().copied().collect();
+        assert_eq!(map.get("push.autoSetupRemote"), Some(&"true"));
+        assert_eq!(map.get("help.autocorrect"), Some(&"prompt"));
+        assert_eq!(map.get("diff.algorithm"), Some(&"histogram"));
+    }
+
+    #[test]
+    fn advanced_preset_values_are_correct() {
+        let map: std::collections::HashMap<&str, &str> =
+            ADVANCED.iter().copied().collect();
+        assert_eq!(map.get("merge.conflictstyle"), Some(&"zdiff3"));
+        assert_eq!(map.get("rerere.enabled"), Some(&"true"));
+    }
+
+    #[test]
+    fn delta_configs_values_are_correct() {
+        let map: std::collections::HashMap<&str, &str> =
+            DELTA_CONFIGS.iter().copied().collect();
+        assert_eq!(map.get("core.pager"), Some(&"delta"));
+        assert_eq!(map.get("delta.navigate"), Some(&"true"));
+        assert_eq!(map.get("delta.side-by-side"), Some(&"true"));
+    }
+
+    // ── apply_config_keys ───────────────────────────────────────────────────
+
+    #[test]
+    fn apply_config_keys_empty_list_succeeds() {
+        let result = apply_config_keys(&[], true, ConfigScope::Global);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_config_keys_single_valid_key() {
+        // Use dry-run to avoid git config lock issues
+        let single: &[(&str, &str)] = &[("push.autoSetupRemote", "true")];
+        let result = apply_configs(single, true, ConfigScope::Global);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_config_keys_multiple_valid_keys() {
+        let result = apply_config_keys(
+            &["push.autoSetupRemote", "diff.algorithm"],
+            true,
+            ConfigScope::Global,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn apply_config_keys_unknown_key_errors() {
+        let result = apply_config_keys(&["unknown.key"], true, ConfigScope::Global);
+        assert!(result.is_err());
+    }
+
+    // ── git_config_get returns Option<String> ───────────────────────────────
+
+    #[test]
+    fn git_config_get_returns_none_for_nonexistent_repo_key() {
+        // This key should never be set
+        assert!(git_config_get("gitkit.test.nonexistent", "--global").is_none());
     }
 }

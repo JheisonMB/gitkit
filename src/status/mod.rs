@@ -149,7 +149,8 @@ fn print_config(scope: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::git_config_get;
+    use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn git_config_get_returns_none_for_missing_key() {
@@ -169,10 +170,180 @@ mod tests {
 
     #[test]
     fn git_config_get_returns_string_when_found() {
-        // user.name may or may not be set, but function should not panic
         let result = git_config_get("user.name", "--global");
         if let Some(val) = result {
             assert!(!val.is_empty());
+        }
+    }
+
+    // ── print_hooks ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn print_hooks_in_repo_with_no_hooks() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::create_dir(dir.path().join(".git").join("hooks")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_hooks();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_hooks_in_repo_without_hooks_dir() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_hooks();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_hooks_with_sample_file_ignored() {
+        let dir = TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-commit.sample"), "#!/bin/sh\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_hooks();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── print_gitignore ─────────────────────────────────────────────────────
+
+    #[test]
+    fn print_gitignore_when_file_missing() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitignore();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_gitignore_with_patterns() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "target/\n*.log\n\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitignore();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_gitignore_with_only_comments() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "# comment\n# another\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitignore();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── print_gitattributes ─────────────────────────────────────────────────
+
+    #[test]
+    fn print_gitattributes_when_file_missing() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitattributes();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_gitattributes_with_line_endings() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitattributes"), "* text=auto eol=lf\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitattributes();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_gitattributes_with_binary() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitattributes"), "*.png binary\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitattributes();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn print_gitattributes_with_custom_only() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitattributes"), "*.txt text\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = print_gitattributes();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── print_config ────────────────────────────────────────────────────────
+
+    #[test]
+    fn print_config_global_does_not_panic() {
+        let result = print_config("global");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn print_config_local_does_not_panic() {
+        let result = print_config("local");
+        assert!(result.is_ok());
+    }
+
+    // ── run (integration) ──────────────────────────────────────────────────
+
+    #[test]
+    fn run_in_repo_does_not_panic() {
+        let original = std::env::current_dir().ok();
+        // We're in the gitkit repo, so run() should work
+        let result = run();
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
         }
     }
 }

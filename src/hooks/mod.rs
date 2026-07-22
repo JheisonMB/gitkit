@@ -380,4 +380,160 @@ mod tests {
             assert!(!name.is_empty());
         }
     }
+
+    // ── detect_builtin edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn detect_builtin_empty_content_does_not_match() {
+        assert!(detect_builtin("pre-commit", "").is_none());
+    }
+
+    #[test]
+    fn detect_builtin_whitespace_only_content_does_not_match() {
+        assert!(detect_builtin("pre-commit", "   \n  \n").is_none());
+    }
+
+    #[test]
+    fn detect_builtin_empty_hook_name_does_not_match() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        assert!(detect_builtin("", no_secrets.script).is_none());
+    }
+
+    #[test]
+    fn detect_builtin_content_with_extra_trailing_newline_matches() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let with_extra = format!("{}\n", no_secrets.script.trim());
+        assert!(detect_builtin("pre-commit", &with_extra).is_some());
+    }
+
+    #[test]
+    fn detect_builtin_content_with_leading_newline_matches() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let with_leading = format!("\n{}", no_secrets.script.trim());
+        assert!(detect_builtin("pre-commit", &with_leading).is_some());
+    }
+
+    #[test]
+    fn detect_builtin_commit_msg_builtin_not_detected_as_pre_commit() {
+        let cc = builtins::get("conventional-commits").unwrap();
+        assert!(detect_builtin("pre-commit", cc.script).is_none());
+    }
+
+    #[test]
+    fn detect_builtin_pre_commit_builtin_not_detected_as_commit_msg() {
+        let ns = builtins::get("no-secrets").unwrap();
+        assert!(detect_builtin("commit-msg", ns.script).is_none());
+    }
+
+    // ── resolve_hook additional edge cases ──────────────────────────────────
+
+    #[test]
+    fn resolve_hook_custom_pre_commit() {
+        let (hook, script) = resolve_hook("pre-commit", Some("echo test")).unwrap();
+        assert_eq!(hook, "pre-commit");
+        assert!(script.contains("#!/bin/sh"));
+        assert!(script.contains("echo test"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_prepare_commit_msg() {
+        let (hook, script) = resolve_hook("prepare-commit-msg", Some("echo msg")).unwrap();
+        assert_eq!(hook, "prepare-commit-msg");
+        assert!(script.contains("echo msg"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_update_hook() {
+        let (hook, _) = resolve_hook("update", Some("echo update")).unwrap();
+        assert_eq!(hook, "update");
+    }
+
+    #[test]
+    fn resolve_hook_errors_for_unknown_custom_without_command() {
+        let err = resolve_hook("unknown-hook", None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a built-in"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_command_with_special_chars() {
+        let (hook, script) = resolve_hook("pre-push", Some("echo $USER && date")).unwrap();
+        assert_eq!(hook, "pre-push");
+        assert!(script.contains("echo $USER && date"));
+    }
+
+    // ── builtins module ─────────────────────────────────────────────────────
+
+    #[test]
+    fn builtins_get_returns_some_for_all_builtins() {
+        for b in available_builtins() {
+            assert!(builtins::get(b.name).is_some());
+        }
+    }
+
+    #[test]
+    fn builtins_get_returns_correct_builtin() {
+        let b = builtins::get("conventional-commits").unwrap();
+        assert_eq!(b.name, "conventional-commits");
+        assert_eq!(b.hook, "commit-msg");
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_partial_match() {
+        assert!(builtins::get("conventional").is_none());
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_empty_string() {
+        assert!(builtins::get("").is_none());
+    }
+
+    #[test]
+    fn builtins_all_scripts_start_with_shebang() {
+        for b in available_builtins() {
+            assert!(
+                b.script.starts_with("#!/bin/sh"),
+                "builtin '{}' script doesn't start with shebang",
+                b.name
+            );
+        }
+    }
+
+    #[test]
+    fn builtins_all_scripts_are_nonempty() {
+        for b in available_builtins() {
+            assert!(
+                !b.script.is_empty(),
+                "builtin '{}' script is empty",
+                b.name
+            );
+        }
+    }
+
+    // ── VALID_HOOKS completeness ────────────────────────────────────────────
+
+    #[test]
+    fn valid_hook_names_does_not_contain_invalid_hooks() {
+        assert!(!VALID_HOOKS.contains(&"post-commit"));
+        assert!(!VALID_HOOKS.contains(&"pre-auto-gc"));
+    }
+
+    #[test]
+    fn valid_hook_names_count_is_reasonable() {
+        assert!(VALID_HOOKS.len() >= 10);
+    }
+
+    // ── hooks_dir error cases ───────────────────────────────────────────────
+
+    #[test]
+    fn hooks_dir_returns_error_outside_repo() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = hooks_dir();
+        assert!(result.is_err());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
 }

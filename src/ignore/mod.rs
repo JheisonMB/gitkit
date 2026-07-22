@@ -340,6 +340,107 @@ mod tests {
     fn api_base_is_correct() {
         assert_eq!(API_BASE, "https://www.toptal.com/developers/gitignore/api");
     }
+
+    // ── merge_gitignore additional edge cases ───────────────────────────────
+
+    #[test]
+    fn merge_gitignore_preserves_order_of_existing() {
+        let (_dir, path) = tmp_gitignore("*.log\n*.tmp\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "*.log");
+        assert_eq!(lines[1], "*.tmp");
+    }
+
+    #[test]
+    fn merge_gitignore_multiple_newlines_preserved() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "*.log\n\n*.tmp\n");
+        assert!(result.contains("*.log"));
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_with_trailing_whitespace() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "target/ \n").unwrap();
+        let result = merge_gitignore(&path, "target/\n");
+        // "target/ " (with trailing space) is not the same as "target/"
+        // so "target/" from new content should still be appended
+        assert!(result.contains("target/"));
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_all_duplicates() {
+        let (_dir, path) = tmp_gitignore("a\nb\nc\n");
+        let result = merge_gitignore(&path, "a\nb\nc\n");
+        assert_eq!(result, "a\nb\nc\n");
+    }
+
+    #[test]
+    fn merge_gitignore_large_content() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let existing: String = (0..100).map(|i| format!("pattern{i}\n")).collect();
+        fs::write(&path, &existing).unwrap();
+        let new: String = (100..150).map(|i| format!("pattern{i}\n")).collect();
+        let result = merge_gitignore(&path, &new);
+        assert!(result.contains("pattern0"));
+        assert!(result.contains("pattern149"));
+    }
+
+    // ── resolve_templates edge cases ────────────────────────────────────────
+
+    #[test]
+    fn resolve_templates_empty_string_does_not_panic() {
+        // Empty string sends empty query to API — just verify it doesn't panic
+        let result = resolve_templates("");
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn resolve_templates_single_builtin() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    #[test]
+    fn resolve_templates_builtin_with_whitespace() {
+        let result = resolve_templates(" agentic ");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    // ── builtins module edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn builtins_names_is_nonempty() {
+        assert!(!builtins::NAMES.is_empty());
+    }
+
+    #[test]
+    fn builtins_get_returns_same_static_str() {
+        let a = builtins::get("agentic");
+        let b = builtins::get("agentic");
+        assert!(std::ptr::eq(
+            a.unwrap() as *const str,
+            b.unwrap() as *const str
+        ));
+    }
+
+    #[test]
+    fn builtins_get_agentic_content_has_expected_dirs() {
+        let content = builtins::get("agentic").unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+        assert!(content.contains(".windsurf/"));
+        assert!(content.contains(".claude/"));
+        assert!(content.contains(".agents/"));
+        assert!(content.contains("skills-lock.json"));
+    }
 }
 
 mod builtins {

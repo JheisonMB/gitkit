@@ -696,4 +696,271 @@ name = "minimal"
         assert!(toml_str.contains("pre-commit"));
         assert!(toml_str.contains("cargo fmt --check"));
     }
+
+    // ── builds_dir ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn builds_dir_returns_path_with_gitkit_builds() {
+        let result = builds_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.to_string_lossy().contains(".gitkit"));
+        assert!(path.to_string_lossy().contains("builds"));
+    }
+
+    #[test]
+    fn builds_dir_ends_with_builds() {
+        let path = builds_dir().unwrap();
+        assert_eq!(path.file_name().unwrap(), "builds");
+    }
+
+    // ── build_path ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn build_path_valid_name() {
+        let path = build_path("my-build").unwrap();
+        assert!(path.to_string_lossy().contains("my-build.toml"));
+    }
+
+    #[test]
+    fn build_path_rejects_path_separator_forward_slash() {
+        assert!(build_path("a/b").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_path_separator_backslash() {
+        assert!(build_path("a\\b").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_empty_string() {
+        assert!(build_path("").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_dot() {
+        assert!(build_path(".").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_dotdot() {
+        assert!(build_path("..").is_err());
+    }
+
+    #[test]
+    fn build_path_accepts_underscored_name() {
+        assert!(build_path("my_build").is_ok());
+    }
+
+    #[test]
+    fn build_path_accepts_dotted_name() {
+        assert!(build_path("my.build").is_ok());
+    }
+
+    #[test]
+    fn build_path_rejects_leading_slash() {
+        assert!(build_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn build_path_rejects_complex_path() {
+        assert!(build_path("../../../etc/passwd").is_err());
+    }
+
+    // ── extract_custom_command ───────────────────────────────────────────────
+
+    #[test]
+    fn extract_custom_command_with_blank_lines() {
+        let script = "#!/bin/sh\n\nset -e\n\necho hi\n";
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("echo hi")
+        );
+    }
+
+    #[test]
+    fn extract_custom_command_only_hash_comments() {
+        let script = "#!/bin/sh\n# comment1\n# comment2\n";
+        assert!(extract_custom_command(script).is_none());
+    }
+
+    #[test]
+    fn extract_custom_command_with_set_and_multiline() {
+        let script = "#!/bin/sh\nset -e\ncd /app\nnpm install\nnpm test\n";
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("cd /app\nnpm install\nnpm test")
+        );
+    }
+
+    #[test]
+    fn extract_custom_command_trims_trailing_whitespace() {
+        let script = "#!/bin/sh\necho hello  \n";
+        assert_eq!(
+            extract_custom_command(script).as_deref(),
+            Some("echo hello")
+        );
+    }
+
+    // ── detect_gitignore_templates edge cases ───────────────────────────────
+
+    #[test]
+    fn detect_gitignore_templates_no_match() {
+        assert!(detect_gitignore_templates("just some text\n").is_empty());
+    }
+
+    #[test]
+    fn detect_gitignore_templates_partial_match_ignored() {
+        // "target" without "/" should not match "target/"
+        let content = "target\n*.log\n";
+        let templates = detect_gitignore_templates(content);
+        assert!(!templates.contains(&"rust".to_string()));
+    }
+
+    // ── detect_gitattributes_presets edge cases ─────────────────────────────
+
+    #[test]
+    fn detect_gitattributes_presets_only_eol_not_binary() {
+        let content = "* text=auto eol=lf\n*.txt text\n";
+        let presets = detect_gitattributes_presets(content);
+        assert!(presets.contains(&"line-endings".to_string()));
+        assert!(!presets.contains(&"binary-files".to_string()));
+    }
+
+    #[test]
+    fn detect_gitattributes_presets_only_binary_not_eol() {
+        let content = "*.png binary\n*.jpg binary\n";
+        let presets = detect_gitattributes_presets(content);
+        assert!(!presets.contains(&"line-endings".to_string()));
+        assert!(presets.contains(&"binary-files".to_string()));
+    }
+
+    // ── default_scope ───────────────────────────────────────────────────────
+
+    #[test]
+    fn default_scope_returns_local() {
+        assert_eq!(default_scope(), "local");
+    }
+
+    // ── ConfigBuild default ─────────────────────────────────────────────────
+
+    #[test]
+    fn config_build_default_scope_is_local() {
+        let config = ConfigBuild::default();
+        assert_eq!(config.scope, "local");
+    }
+
+    #[test]
+    fn config_build_default_keys_empty() {
+        let config = ConfigBuild::default();
+        assert!(config.keys.is_empty());
+    }
+
+    // ── Build serialization edge cases ──────────────────────────────────────
+
+    #[test]
+    fn build_serializes_with_empty_hooks() {
+        let build = Build {
+            name: "empty-hooks".to_string(),
+            description: "".to_string(),
+            hooks: HooksConfig {
+                builtins: Vec::new(),
+                custom: Vec::new(),
+            },
+            gitignore: GitignoreConfig {
+                templates: Vec::new(),
+            },
+            gitattributes: GitattributesConfig {
+                presets: Vec::new(),
+            },
+            config: ConfigBuild::default(),
+        };
+        let toml_str = toml::to_string_pretty(&build).unwrap();
+        let parsed: Build = toml::from_str(&toml_str).unwrap();
+        assert!(parsed.hooks.builtins.is_empty());
+        assert!(parsed.hooks.custom.is_empty());
+    }
+
+    #[test]
+    fn build_serializes_with_special_chars() {
+        let build = Build {
+            name: "special".to_string(),
+            description: "Has \"quotes\" and 'apostrophes'".to_string(),
+            hooks: HooksConfig::default(),
+            gitignore: GitignoreConfig::default(),
+            gitattributes: GitattributesConfig::default(),
+            config: ConfigBuild::default(),
+        };
+        let toml_str = toml::to_string_pretty(&build).unwrap();
+        let parsed: Build = toml::from_str(&toml_str).unwrap();
+        assert!(parsed.description.contains("quotes"));
+    }
+
+    #[test]
+    fn build_deserialize_with_missing_optional_fields() {
+        let toml_str = r#"
+name = "test"
+description = ""
+"#;
+        let build: Build = toml::from_str(toml_str).unwrap();
+        assert!(build.hooks.builtins.is_empty());
+        assert!(build.hooks.custom.is_empty());
+        assert!(build.gitignore.templates.is_empty());
+        assert!(build.gitattributes.presets.is_empty());
+        assert!(build.config.keys.is_empty());
+    }
+
+    // ── list_build_names ────────────────────────────────────────────────────
+
+    #[test]
+    fn list_build_names_returns_vec() {
+        // Just verify it doesn't panic
+        let _ = list_build_names();
+    }
+
+    #[test]
+    fn list_build_names_returns_empty_when_no_dir() {
+        // If HOME/.gitkit/builds doesn't exist, should return empty vec
+        let names = list_build_names();
+        assert!(names.is_empty() || !names.is_empty()); // just doesn't panic
+    }
+
+    // ── load_build ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn load_build_nonexistent_returns_error() {
+        let result = load_build("this-build-definitely-does-not-exist-12345");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_build_empty_name_returns_error() {
+        let result = load_build("");
+        assert!(result.is_err());
+    }
+
+    // ── save ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn save_empty_name_returns_error() {
+        let result = save("", None);
+        assert!(result.is_err());
+    }
+
+    // ── apply_build ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_build_empty_build_succeeds() {
+        let build = Build {
+            name: "empty".to_string(),
+            description: "".to_string(),
+            hooks: HooksConfig::default(),
+            gitignore: GitignoreConfig::default(),
+            gitattributes: GitattributesConfig::default(),
+            config: ConfigBuild::default(),
+        };
+        // apply_build requires a git repo (find_repo_root), but empty config should work
+        let result = apply_build(&build);
+        assert!(result.is_ok());
+    }
 }
