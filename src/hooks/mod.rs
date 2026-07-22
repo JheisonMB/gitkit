@@ -502,11 +502,7 @@ mod tests {
     #[test]
     fn builtins_all_scripts_are_nonempty() {
         for b in available_builtins() {
-            assert!(
-                !b.script.is_empty(),
-                "builtin '{}' script is empty",
-                b.name
-            );
+            assert!(!b.script.is_empty(), "builtin '{}' script is empty", b.name);
         }
     }
 

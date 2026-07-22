@@ -616,8 +616,7 @@ mod tests {
 
     #[test]
     fn defaults_preset_values_are_correct() {
-        let map: std::collections::HashMap<&str, &str> =
-            DEFAULTS.iter().copied().collect();
+        let map: std::collections::HashMap<&str, &str> = DEFAULTS.iter().copied().collect();
         assert_eq!(map.get("push.autoSetupRemote"), Some(&"true"));
         assert_eq!(map.get("help.autocorrect"), Some(&"prompt"));
         assert_eq!(map.get("diff.algorithm"), Some(&"histogram"));
@@ -625,16 +624,14 @@ mod tests {
 
     #[test]
     fn advanced_preset_values_are_correct() {
-        let map: std::collections::HashMap<&str, &str> =
-            ADVANCED.iter().copied().collect();
+        let map: std::collections::HashMap<&str, &str> = ADVANCED.iter().copied().collect();
         assert_eq!(map.get("merge.conflictstyle"), Some(&"zdiff3"));
         assert_eq!(map.get("rerere.enabled"), Some(&"true"));
     }
 
     #[test]
     fn delta_configs_values_are_correct() {
-        let map: std::collections::HashMap<&str, &str> =
-            DELTA_CONFIGS.iter().copied().collect();
+        let map: std::collections::HashMap<&str, &str> = DELTA_CONFIGS.iter().copied().collect();
         assert_eq!(map.get("core.pager"), Some(&"delta"));
         assert_eq!(map.get("delta.navigate"), Some(&"true"));
         assert_eq!(map.get("delta.side-by-side"), Some(&"true"));

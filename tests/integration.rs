@@ -212,11 +212,7 @@ fn cli_hooks_add_builtin_conventional_commits() {
         "Installing builtin should succeed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let hook_path = dir
-        .path()
-        .join(".git")
-        .join("hooks")
-        .join("commit-msg");
+    let hook_path = dir.path().join(".git").join("hooks").join("commit-msg");
     assert!(hook_path.exists());
 }
 
@@ -327,11 +323,7 @@ fn cli_hooks_add_custom_hook_creates_executable() {
         .output()
         .expect("Failed to run gitkit");
     assert!(output.status.success());
-    let hook_path = dir
-        .path()
-        .join(".git")
-        .join("hooks")
-        .join("pre-commit");
+    let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -347,7 +339,14 @@ fn cli_hooks_add_with_dry_run() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
-        .args(["hooks", "add", "--yes", "--dry-run", "pre-push", "echo test"])
+        .args([
+            "hooks",
+            "add",
+            "--yes",
+            "--dry-run",
+            "pre-push",
+            "echo test",
+        ])
         .current_dir(dir.path())
         .output()
         .expect("Failed to run gitkit");

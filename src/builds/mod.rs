@@ -772,10 +772,7 @@ name = "minimal"
     #[test]
     fn extract_custom_command_with_blank_lines() {
         let script = "#!/bin/sh\n\nset -e\n\necho hi\n";
-        assert_eq!(
-            extract_custom_command(script).as_deref(),
-            Some("echo hi")
-        );
+        assert_eq!(extract_custom_command(script).as_deref(), Some("echo hi"));
     }
 
     #[test]
