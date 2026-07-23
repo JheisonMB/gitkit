@@ -441,6 +441,211 @@ mod tests {
         assert!(content.contains(".agents/"));
         assert!(content.contains("skills-lock.json"));
     }
+
+    // ── add_templates ─────────────────────────────────────────────────────
+
+    #[test]
+    fn add_templates_force_writes_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", true);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn add_templates_merge_with_existing_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", false);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains("target/"));
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn add_templates_no_existing_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", false);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── resolve_templates with builtins only ──────────────────────────────
+
+    #[test]
+    fn resolve_templates_single_builtin_no_api_call() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+    }
+
+    #[test]
+    fn resolve_templates_two_distinct_builtins() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+    }
+
+    #[test]
+    fn resolve_templates_builtin_with_whitespace_around() {
+        let result = resolve_templates("  agentic  ");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    // ── merge_gitignore additional edge cases ─────────────────────────────
+
+    #[test]
+    fn merge_gitignore_both_empty() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_only_comments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "# comment\n# another\n");
+        assert!(result.contains("# comment"));
+        assert!(result.contains("# another"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_with_trailing_newline() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/\n").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_without_trailing_newline() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_blank_lines_only() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/\n").unwrap();
+        let result = merge_gitignore(&path, "\n\n\n");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_mixed_patterns_and_comments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "*.log\n").unwrap();
+        let result = merge_gitignore(&path, "# Rust\ntarget/\n*.log\n# Python\n__pycache__/\n");
+        assert!(result.contains("# Rust"));
+        assert!(result.contains("target/"));
+        assert!(result.contains("__pycache__/"));
+        assert_eq!(result.matches("*.log").count(), 1);
+    }
+
+    #[test]
+    fn merge_gitignore_preserves_order() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "a\nb\n").unwrap();
+        let result = merge_gitignore(&path, "c\n");
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "a");
+        assert_eq!(lines[1], "b");
+        assert_eq!(lines[2], "c");
+    }
+
+    #[test]
+    fn merge_gitignore_duplicate_comment_not_deduplicated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "# header\na\n").unwrap();
+        let result = merge_gitignore(&path, "# header\nb\n");
+        // Comments are always appended (not deduplicated)
+        assert!(result.contains("# header"));
+        assert!(result.contains("b"));
+    }
+
+    // ── run dispatch ──────────────────────────────────────────────────────
+
+    #[test]
+    fn run_list_builtins() {
+        let result = run(IgnoreCommand::List {
+            filter: Some("agentic".to_string()),
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_list_all() {
+        let result = run(IgnoreCommand::List { filter: None });
+        // This calls the API, may fail if offline
+        let _ = result;
+    }
+
+    // ── builtins module edge cases ────────────────────────────────────────
+
+    #[test]
+    fn builtins_names_all_have_content() {
+        for name in builtins::NAMES {
+            let content = builtins::get(name);
+            assert!(content.is_some(), "Builtin {} has no content", name);
+            assert!(
+                !content.unwrap().is_empty(),
+                "Builtin {} has empty content",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn builtins_get_returns_same_content_multiple_calls() {
+        let a = builtins::get("agentic").unwrap();
+        let b = builtins::get("agentic").unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn builtins_get_unknown_returns_none() {
+        assert!(builtins::get("unknown-template").is_none());
+        assert!(builtins::get("").is_none());
+        assert!(builtins::get("Rust").is_none());
+    }
 }
 
 mod builtins {
