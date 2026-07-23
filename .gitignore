@@ -19,3 +19,31 @@ skills-lock.json
 #/target
 *.mp4
 .mimocode/
+
+# AI coding agents
+.cursor/
+.windsurf/
+.claude/
+.continue/
+.copilot/
+.kilocode/
+.zencoder/
+.qwen/
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents
+
+# AI coding agents

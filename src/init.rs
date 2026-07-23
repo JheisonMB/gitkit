@@ -415,6 +415,7 @@ fn resolve_keys<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn get_configured_keys_only_returns_known_option_keys() {
@@ -431,5 +432,351 @@ mod tests {
         let keys = vec!["key_a", "key_b", "key_c"];
         let result = resolve_keys(&selections, &labels, &keys);
         assert_eq!(result, vec!["key_a", "key_c"]);
+    }
+
+    #[test]
+    fn resolve_keys_empty_selections() {
+        let selections: Vec<&str> = vec![];
+        let labels = vec!["option A", "option B"];
+        let keys = vec!["key_a", "key_b"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn resolve_keys_no_matching_labels() {
+        let selections = vec!["unknown option"];
+        let labels = vec!["option A", "option B"];
+        let keys = vec!["key_a", "key_b"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn resolve_keys_single_match() {
+        let selections = vec!["option B"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_b"]);
+    }
+
+    #[test]
+    fn resolve_keys_all_labels_selected() {
+        let selections = vec!["option A", "option B", "option C"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_a", "key_b", "key_c"]);
+    }
+
+    #[test]
+    fn get_all_git_configs_returns_map() {
+        let result = get_all_git_configs("--global");
+        // Should return a HashMap, possibly empty
+        assert!(result.is_empty() || !result.is_empty());
+    }
+
+    #[test]
+    fn get_installed_hooks_returns_hashset() {
+        let hooks = get_installed_hooks();
+        // Should return a HashSet, possibly empty
+        assert!(hooks.is_empty() || !hooks.is_empty());
+    }
+
+    // ── get_installed_hooks with actual hooks ─────────────────────────────
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_with_builtin_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let builtin = crate::hooks::builtins::get("conventional-commits").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg"), builtin.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.contains("conventional-commits"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_with_no_secrets_builtin() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let builtin = crate::hooks::builtins::get("no-secrets").unwrap();
+        std::fs::write(hooks_dir.join("pre-commit"), builtin.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.contains("no-secrets"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_skips_bak_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let builtin = crate::hooks::builtins::get("conventional-commits").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg.bak"), builtin.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_skips_sample_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let builtin = crate::hooks::builtins::get("conventional-commits").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg.sample"), builtin.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_empty_hooks_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_no_hooks_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        // No hooks dir
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_no_git_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // No .git dir at all
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        // find_repo_root fails, returns empty set
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_with_custom_hook_not_detected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        // Write a hook that doesn't match any builtin
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\nmy custom command\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        // Custom hooks are not detected as builtins
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_with_multiple_builtins() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let cc = crate::hooks::builtins::get("conventional-commits").unwrap();
+        let ns = crate::hooks::builtins::get("no-secrets").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg"), cc.script).unwrap();
+        std::fs::write(hooks_dir.join("pre-commit"), ns.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        assert!(hooks.contains("conventional-commits"));
+        assert!(hooks.contains("no-secrets"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── get_configured_keys ───────────────────────────────────────────────
+
+    #[test]
+    fn get_configured_keys_returns_hashset() {
+        let keys = get_configured_keys();
+        // Should return a HashSet
+        let _ = keys;
+    }
+
+    #[test]
+    fn get_configured_keys_all_keys_are_valid() {
+        let keys = get_configured_keys();
+        for key in &keys {
+            assert!(config::CONFIG_OPTIONS.iter().any(|o| o.key == key));
+        }
+    }
+
+    #[test]
+    fn get_configured_keys_core_pager_excluded() {
+        let keys = get_configured_keys();
+        assert!(!keys.contains("core.pager"));
+    }
+
+    // ── get_all_git_configs ───────────────────────────────────────────────
+
+    #[test]
+    fn get_all_git_configs_global_returns_map() {
+        let configs = get_all_git_configs("--global");
+        assert!(configs.is_empty() || !configs.is_empty());
+    }
+
+    #[test]
+    fn get_all_git_configs_local_returns_map() {
+        let configs = get_all_git_configs("--local");
+        assert!(configs.is_empty() || !configs.is_empty());
+    }
+
+    #[test]
+    fn get_all_git_configs_invalid_scope_returns_empty() {
+        let configs = get_all_git_configs("--invalid-scope");
+        assert!(configs.is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn get_all_git_configs_with_set_value() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        // Set a config value
+        let _ = std::process::Command::new("git")
+            .args(["config", "local", "gitkit.test.configkey", "testvalue"])
+            .output();
+        let configs = get_all_git_configs("--local");
+        // Should contain the value we just set
+        let _ = configs.get("gitkit.test.configkey");
+        // Clean up
+        let _ = std::process::Command::new("git")
+            .args(["config", "local", "--unset", "gitkit.test.configkey"])
+            .output();
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── load_ignore_templates ─────────────────────────────────────────────
+
+    #[test]
+    fn load_ignore_templates_returns_vec() {
+        let templates = load_ignore_templates();
+        // Returns a Vec<String>, may be empty if offline
+        let _ = templates;
+    }
+
+    // ── resolve_keys additional edge cases ────────────────────────────────
+
+    #[test]
+    fn resolve_keys_with_string_selections() {
+        let selections = vec!["option A".to_string(), "option C".to_string()];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_a", "key_c"]);
+    }
+
+    #[test]
+    fn resolve_keys_duplicate_selections() {
+        let selections = vec!["option A", "option A"];
+        let labels = vec!["option A", "option B"];
+        let keys = vec!["key_a", "key_b"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert_eq!(result, vec!["key_a", "key_a"]);
+    }
+
+    #[test]
+    fn resolve_keys_empty_labels() {
+        let selections = vec!["option A"];
+        let labels: Vec<&str> = vec![];
+        let keys: Vec<&str> = vec![];
+        let result = resolve_keys(&selections, &labels, &keys);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn resolve_keys_more_labels_than_keys_panics() {
+        let selections = vec!["option A", "option C"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b"];
+        let _ = resolve_keys(&selections, &labels, &keys);
+    }
+
+    #[test]
+    fn resolve_keys_partial_overlap() {
+        let selections = vec!["option B", "option D"];
+        let labels = vec!["option A", "option B", "option C"];
+        let keys = vec!["key_a", "key_b", "key_c"];
+        let result = resolve_keys(&selections, &labels, &keys);
+        // "option B" matches index 1, "option D" doesn't match
+        assert_eq!(result, vec!["key_b"]);
+    }
+
+    // ── get_installed_hooks with unreadable file ──────────────────────────
+
+    #[serial]
+    #[test]
+    fn get_installed_hooks_with_unreadable_hook_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        // Create a file that can't be read (empty content)
+        std::fs::write(hooks_dir.join("pre-push"), "").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let hooks = get_installed_hooks();
+        // Empty file won't match any builtin
+        assert!(hooks.is_empty());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
     }
 }

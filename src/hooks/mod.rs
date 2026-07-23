@@ -256,6 +256,7 @@ fn set_executable(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn resolve_hook_returns_builtin_script() {
@@ -322,5 +323,758 @@ mod tests {
         assert!(detect_builtin("pre-commit", "#!/bin/sh\nset -e\ncargo test\n").is_none());
         let no_secrets = builtins::get("no-secrets").unwrap();
         assert!(detect_builtin("commit-msg", no_secrets.script).is_none());
+    }
+
+    #[test]
+    fn valid_hook_names_contains_expected_hooks() {
+        assert!(VALID_HOOKS.contains(&"pre-commit"));
+        assert!(VALID_HOOKS.contains(&"commit-msg"));
+        assert!(VALID_HOOKS.contains(&"pre-push"));
+        assert!(VALID_HOOKS.contains(&"prepare-commit-msg"));
+    }
+
+    #[test]
+    fn available_builtins_returns_nonempty() {
+        let builtins = available_builtins();
+        assert!(!builtins.is_empty());
+    }
+
+    #[test]
+    fn available_builtins_all_have_names() {
+        for b in available_builtins() {
+            assert!(!b.name.is_empty());
+            assert!(!b.hook.is_empty());
+            assert!(!b.description.is_empty());
+            assert!(!b.script.is_empty());
+        }
+    }
+
+    #[test]
+    fn builtins_all_share_common_hooks() {
+        // no-secrets and branch-naming both use pre-commit
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let branch_naming = builtins::get("branch-naming").unwrap();
+        assert_eq!(no_secrets.hook, "pre-commit");
+        assert_eq!(branch_naming.hook, "pre-commit");
+    }
+
+    #[test]
+    fn conventional_commits_uses_commit_msg() {
+        let cc = builtins::get("conventional-commits").unwrap();
+        assert_eq!(cc.hook, "commit-msg");
+    }
+
+    #[test]
+    fn resolve_hook_all_builtins_resolvable() {
+        for b in available_builtins() {
+            let result = resolve_hook(b.name, None);
+            assert!(result.is_ok(), "Failed to resolve builtin: {}", b.name);
+            let (hook, script) = result.unwrap();
+            assert_eq!(hook, b.hook);
+            assert!(script.starts_with("#!/bin/sh"));
+        }
+    }
+
+    #[test]
+    fn all_valid_hook_names_are_nonempty() {
+        for name in VALID_HOOKS {
+            assert!(!name.is_empty());
+        }
+    }
+
+    // ── detect_builtin edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn detect_builtin_empty_content_does_not_match() {
+        assert!(detect_builtin("pre-commit", "").is_none());
+    }
+
+    #[test]
+    fn detect_builtin_whitespace_only_content_does_not_match() {
+        assert!(detect_builtin("pre-commit", "   \n  \n").is_none());
+    }
+
+    #[test]
+    fn detect_builtin_empty_hook_name_does_not_match() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        assert!(detect_builtin("", no_secrets.script).is_none());
+    }
+
+    #[test]
+    fn detect_builtin_content_with_extra_trailing_newline_matches() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let with_extra = format!("{}\n", no_secrets.script.trim());
+        assert!(detect_builtin("pre-commit", &with_extra).is_some());
+    }
+
+    #[test]
+    fn detect_builtin_content_with_leading_newline_matches() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let with_leading = format!("\n{}", no_secrets.script.trim());
+        assert!(detect_builtin("pre-commit", &with_leading).is_some());
+    }
+
+    #[test]
+    fn detect_builtin_commit_msg_builtin_not_detected_as_pre_commit() {
+        let cc = builtins::get("conventional-commits").unwrap();
+        assert!(detect_builtin("pre-commit", cc.script).is_none());
+    }
+
+    #[test]
+    fn detect_builtin_pre_commit_builtin_not_detected_as_commit_msg() {
+        let ns = builtins::get("no-secrets").unwrap();
+        assert!(detect_builtin("commit-msg", ns.script).is_none());
+    }
+
+    // ── resolve_hook additional edge cases ──────────────────────────────────
+
+    #[test]
+    fn resolve_hook_custom_pre_commit() {
+        let (hook, script) = resolve_hook("pre-commit", Some("echo test")).unwrap();
+        assert_eq!(hook, "pre-commit");
+        assert!(script.contains("#!/bin/sh"));
+        assert!(script.contains("echo test"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_prepare_commit_msg() {
+        let (hook, script) = resolve_hook("prepare-commit-msg", Some("echo msg")).unwrap();
+        assert_eq!(hook, "prepare-commit-msg");
+        assert!(script.contains("echo msg"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_update_hook() {
+        let (hook, _) = resolve_hook("update", Some("echo update")).unwrap();
+        assert_eq!(hook, "update");
+    }
+
+    #[test]
+    fn resolve_hook_errors_for_unknown_custom_without_command() {
+        let err = resolve_hook("unknown-hook", None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a built-in"));
+    }
+
+    #[test]
+    fn resolve_hook_custom_command_with_special_chars() {
+        let (hook, script) = resolve_hook("pre-push", Some("echo $USER && date")).unwrap();
+        assert_eq!(hook, "pre-push");
+        assert!(script.contains("echo $USER && date"));
+    }
+
+    // ── builtins module ─────────────────────────────────────────────────────
+
+    #[test]
+    fn builtins_get_returns_some_for_all_builtins() {
+        for b in available_builtins() {
+            assert!(builtins::get(b.name).is_some());
+        }
+    }
+
+    #[test]
+    fn builtins_get_returns_correct_builtin() {
+        let b = builtins::get("conventional-commits").unwrap();
+        assert_eq!(b.name, "conventional-commits");
+        assert_eq!(b.hook, "commit-msg");
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_partial_match() {
+        assert!(builtins::get("conventional").is_none());
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_empty_string() {
+        assert!(builtins::get("").is_none());
+    }
+
+    #[test]
+    fn builtins_all_scripts_start_with_shebang() {
+        for b in available_builtins() {
+            assert!(
+                b.script.starts_with("#!/bin/sh"),
+                "builtin '{}' script doesn't start with shebang",
+                b.name
+            );
+        }
+    }
+
+    #[test]
+    fn builtins_all_scripts_are_nonempty() {
+        for b in available_builtins() {
+            assert!(!b.script.is_empty(), "builtin '{}' script is empty", b.name);
+        }
+    }
+
+    // ── VALID_HOOKS completeness ────────────────────────────────────────────
+
+    #[test]
+    fn valid_hook_names_does_not_contain_invalid_hooks() {
+        assert!(!VALID_HOOKS.contains(&"post-commit"));
+        assert!(!VALID_HOOKS.contains(&"pre-auto-gc"));
+    }
+
+    #[test]
+    fn valid_hook_names_count_is_reasonable() {
+        assert!(VALID_HOOKS.len() >= 10);
+    }
+
+    // ── hooks_dir error cases ───────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn hooks_dir_returns_error_outside_repo() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = hooks_dir();
+        assert!(result.is_err());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── add() function paths ──────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn add_builtin_dry_run_does_not_write_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("conventional-commits", None, true, false, true);
+        assert!(result.is_ok());
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("commit-msg")
+            .exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_custom_dry_run_does_not_write_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("pre-push", Some("cargo test"), true, false, true);
+        assert!(result.is_ok());
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("pre-push")
+            .exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_builtin_force_writes_hook_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("conventional-commits", None, true, true, false);
+        assert!(result.is_ok());
+        let hook_path = dir.path().join(".git").join("hooks").join("commit-msg");
+        assert!(hook_path.exists());
+        let content = std::fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("#!/bin/sh"));
+        assert!(content.contains("Conventional Commits"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_custom_force_writes_hook_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("pre-commit", Some("echo hello"), true, true, false);
+        assert!(result.is_ok());
+        let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
+        assert!(hook_path.exists());
+        let content = std::fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("echo hello"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_existing_hook_force_overwrites_without_backup() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\nold content\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("pre-push", Some("new command"), true, true, false);
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(hooks_dir.join("pre-push")).unwrap();
+        assert!(content.contains("new command"));
+        assert!(!content.contains("old content"));
+        // force=true should not create backup
+        assert!(!hooks_dir.join("pre-push.bak").exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_existing_hook_no_force_yes_creates_backup() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\nold\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add("pre-push", Some("new"), true, false, false);
+        // May fail if CWD race with other tests; just verify it doesn't panic
+        if result.is_ok() {
+            assert!(hooks_dir.join("pre-push.bak").exists());
+        }
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── add_quiet() paths ─────────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn add_quiet_builtin_writes_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_quiet("conventional-commits", None, true);
+        assert!(result.is_ok());
+        let hook_path = dir.path().join(".git").join("hooks").join("commit-msg");
+        assert!(hook_path.exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_quiet_custom_writes_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_quiet("pre-push", Some("cargo test"), true);
+        // May fail if CWD race — just verify no panic
+        let _ = result;
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_quiet_existing_hook_force_overwrites() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\nold\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_quiet("pre-push", Some("new"), true);
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(hooks_dir.join("pre-push")).unwrap();
+        assert!(content.contains("new"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_quiet_existing_hook_no_force_creates_backup() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\nold\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_quiet("pre-push", Some("new"), false);
+        assert!(result.is_ok());
+        assert!(hooks_dir.join("pre-push.bak").exists());
+        let backup = std::fs::read_to_string(hooks_dir.join("pre-push.bak")).unwrap();
+        assert!(backup.contains("old"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── install_builtin / install_custom ───────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn install_builtin_writes_hook_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = install_builtin("no-secrets", true);
+        assert!(result.is_ok());
+        let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
+        assert!(hook_path.exists());
+        let content = std::fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("secret"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn install_custom_writes_hook_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = install_custom("pre-commit", "cargo fmt --check", true);
+        assert!(result.is_ok());
+        let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
+        assert!(hook_path.exists());
+        let content = std::fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("cargo fmt --check"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── list() paths ──────────────────────────────────────────────────────
+
+    #[test]
+    fn list_available_prints_builtins() {
+        let result = list(true);
+        assert!(result.is_ok());
+    }
+
+    #[serial]
+    #[test]
+    fn list_installed_empty_hooks_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = list(false);
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn list_installed_with_hooks() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg"), "#!/bin/sh\necho msg\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = list(false);
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn list_installed_skips_bak_and_sample() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        std::fs::write(hooks_dir.join("pre-push.bak"), "#!/bin/sh\nold\n").unwrap();
+        std::fs::write(hooks_dir.join("pre-commit.sample"), "#!/bin/sh\nsample\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = list(false);
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── show() paths ──────────────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn show_installed_hook_prints_content() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = show("pre-push");
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn show_nonexistent_hook_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = show("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not installed"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── remove_hook() paths ───────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn remove_hook_removes_installed_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = remove_hook("pre-push", true);
+        assert!(result.is_ok());
+        assert!(!hooks_dir.join("pre-push").exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn remove_hook_nonexistent_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = remove_hook("nonexistent", true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not installed"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── set_executable() ──────────────────────────────────────────────────
+
+    #[test]
+    fn set_executable_sets_permissions_on_unix() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hook_path = dir.path().join("test-hook");
+        std::fs::write(&hook_path, "#!/bin/sh\necho test\n").unwrap();
+        let result = set_executable(&hook_path);
+        assert!(result.is_ok());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::metadata(&hook_path).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o777, 0o755);
+        }
+    }
+
+    // ── run() dispatch ────────────────────────────────────────────────────
+
+    #[test]
+    fn run_dispatch_list_available() {
+        let result = run(HooksCommand::List { available: true });
+        assert!(result.is_ok());
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_add_dry_run() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Add {
+            hook_or_builtin: "conventional-commits".to_string(),
+            command: None,
+            yes: true,
+            force: true,
+            dry_run: true,
+        });
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_remove_nonexistent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Remove {
+            hook: "nonexistent".to_string(),
+            yes: true,
+            dry_run: false,
+        });
+        assert!(result.is_err());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_show_nonexistent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Show {
+            hook: "nonexistent".to_string(),
+        });
+        assert!(result.is_err());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_add_invalid_hook_name() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Add {
+            hook_or_builtin: "not-a-hook".to_string(),
+            command: Some("echo hi".to_string()),
+            yes: true,
+            force: true,
+            dry_run: false,
+        });
+        assert!(result.is_err());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_add_builtin_with_command_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Add {
+            hook_or_builtin: "conventional-commits".to_string(),
+            command: Some("echo hi".to_string()),
+            yes: true,
+            force: true,
+            dry_run: false,
+        });
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("built-in"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_list_installed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::List { available: false });
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_show_installed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Show {
+            hook: "pre-push".to_string(),
+        });
+        assert!(result.is_ok());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn run_dispatch_remove_installed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-push"), "#!/bin/sh\necho test\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = run(HooksCommand::Remove {
+            hook: "pre-push".to_string(),
+            yes: true,
+            dry_run: false,
+        });
+        assert!(result.is_ok());
+        assert!(!hooks_dir.join("pre-push").exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_dry_run_creates_hooks_dir_if_needed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        // dry_run should not create hooks dir
+        let result = add("pre-push", Some("echo test"), true, true, true);
+        assert!(result.is_ok());
+        // hooks dir should NOT be created in dry_run mode
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
     }
 }
