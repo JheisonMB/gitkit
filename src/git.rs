@@ -36,6 +36,7 @@ pub fn init_if_needed() -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
     use super::*;
     use tempfile::TempDir;
 
@@ -55,6 +56,7 @@ mod tests {
         let _: bool = result;
     }
 
+#[serial]
     #[test]
     fn is_git_repo_does_not_panic_for_invalid_dir() {
         // Verify it returns false rather than panicking when not in a repo
@@ -81,6 +83,7 @@ mod tests {
         assert!(dir.path().join(".git").exists());
     }
 
+#[serial]
     #[test]
     fn init_if_needed_skips_if_git_exists() {
         // In a dir that already has .git, init_if_needed should return Ok(false)
@@ -96,6 +99,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     #[ignore = "flaky: set_current_dir races with parallel tests"]
     fn init_if_needed_initializes_new_repo() {

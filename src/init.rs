@@ -414,6 +414,7 @@ fn resolve_keys<'a>(
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
     use super::*;
 
     #[test]
@@ -485,6 +486,7 @@ mod tests {
 
     // ── get_installed_hooks with actual hooks ─────────────────────────────
 
+#[serial]
     #[test]
     fn get_installed_hooks_with_builtin_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -501,6 +503,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_with_no_secrets_builtin() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -517,6 +520,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_skips_bak_files() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -533,6 +537,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_skips_sample_files() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -549,6 +554,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_empty_hooks_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -563,6 +569,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_no_hooks_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -577,6 +584,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_no_git_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -591,6 +599,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_with_custom_hook_not_detected() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -608,6 +617,7 @@ mod tests {
         }
     }
 
+#[serial]
     #[test]
     fn get_installed_hooks_with_multiple_builtins() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -670,6 +680,7 @@ mod tests {
         assert!(configs.is_empty());
     }
 
+#[serial]
     #[test]
     fn get_all_git_configs_with_set_value() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -751,6 +762,7 @@ mod tests {
 
     // ── get_installed_hooks with unreadable file ──────────────────────────
 
+#[serial]
     #[test]
     fn get_installed_hooks_with_unreadable_hook_file() {
         let dir = tempfile::TempDir::new().unwrap();

@@ -43,6 +43,7 @@ pub(crate) fn git_config_get(key: &str, scope: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
     use super::*;
     use tempfile::TempDir;
 
@@ -76,6 +77,7 @@ mod tests {
         assert!(deep.join("").parent().unwrap().exists());
     }
 
+#[serial]
     #[test]
     fn find_repo_root_no_git_dir_returns_error() {
         let dir = TempDir::new().unwrap();
