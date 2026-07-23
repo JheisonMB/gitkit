@@ -90,7 +90,7 @@ mod tests {
         let _ = std::env::set_current_dir(dir.path());
         let result = init_if_needed();
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
@@ -103,7 +103,7 @@ mod tests {
         let _ = std::env::set_current_dir(dir.path());
         let result = init_if_needed();
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
         assert!(dir.path().join(".git").exists());
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
