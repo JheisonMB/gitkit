@@ -185,8 +185,8 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::TempDir;
 
@@ -445,7 +445,7 @@ mod tests {
 
     // ── add_templates ─────────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn add_templates_force_writes_gitignore() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -461,7 +461,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_templates_merge_with_existing_gitignore() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -479,7 +479,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_templates_no_existing_gitignore() {
         let dir = tempfile::TempDir::new().unwrap();

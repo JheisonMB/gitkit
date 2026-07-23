@@ -332,8 +332,8 @@ fn install_delta() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn apply_configs_dry_run_prints_without_running_git() {
@@ -477,7 +477,7 @@ mod tests {
         assert!(matches!(determine_scope(true, true), ConfigScope::Global));
     }
 
-#[serial]
+    #[serial]
     #[test]
     #[ignore = "flaky: set_current_dir races with parallel tests"]
     fn determine_scope_neither_flag_in_repo_is_local() {
@@ -695,7 +695,7 @@ mod tests {
 
     // ── apply_configs non-dry-run ─────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_configs_non_dry_run_in_temp_repo() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -715,7 +715,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_configs_non_dry_run_already_set() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -736,7 +736,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_configs_non_dry_run_multiple_configs() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -762,7 +762,7 @@ mod tests {
 
     // ── git_config_set ────────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn git_config_set_local_in_temp_repo() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -793,7 +793,7 @@ mod tests {
 
     // ── remove_config_key ─────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn remove_config_key_existing() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -811,7 +811,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn remove_config_key_nonexistent_errors() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -847,7 +847,7 @@ mod tests {
 
     // ── apply_single_config non-dry-run ───────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_single_config_known_key_sets_value() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -865,7 +865,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_single_config_all_non_pager_keys() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -906,7 +906,7 @@ mod tests {
 
     // ── apply_config_keys with known keys ─────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_config_keys_multiple_valid_non_dry_run() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -981,7 +981,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_apply_defaults_non_dry_run() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1007,7 +1007,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_apply_advanced_non_dry_run() {
         let dir = tempfile::TempDir::new().unwrap();

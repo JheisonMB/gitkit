@@ -437,8 +437,8 @@ pub(crate) fn load_build(name: &str) -> Result<Build> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn build_serializes_to_toml() {
@@ -964,7 +964,7 @@ description = ""
 
     // ── capture_current_config ────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_in_bare_repo() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -988,7 +988,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_with_gitignore() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1009,7 +1009,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_with_gitattributes() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1033,7 +1033,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_with_builtin_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1060,7 +1060,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_with_custom_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1089,7 +1089,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_skips_bak_and_sample_files() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1114,7 +1114,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_no_gitignore_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1134,7 +1134,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_no_gitattributes_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1154,7 +1154,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_description_none_uses_empty() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1173,7 +1173,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn capture_current_config_with_both_gitignore_and_gitattributes() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1210,7 +1210,7 @@ description = ""
 
     // ── save / load_build / delete round-trip ─────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn save_and_load_build_roundtrip() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1234,7 +1234,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn save_duplicate_name_errors() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1255,7 +1255,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn delete_existing_build_succeeds() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1314,7 +1314,7 @@ description = ""
         assert!(result.is_ok());
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn list_with_saved_builds() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1336,7 +1336,7 @@ description = ""
 
     // ── apply_build with non-empty build ──────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_build_with_builtin_hooks() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1370,7 +1370,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_build_with_custom_hooks() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1406,7 +1406,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_build_with_gitignore_templates() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1438,7 +1438,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_build_with_gitattributes_presets() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1470,7 +1470,7 @@ description = ""
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn apply_build_full_build_all_sections() {
         let dir = tempfile::TempDir::new().unwrap();

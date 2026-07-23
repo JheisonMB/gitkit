@@ -255,8 +255,8 @@ fn set_executable(_path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn resolve_hook_returns_builtin_script() {
@@ -522,7 +522,7 @@ mod tests {
 
     // ── hooks_dir error cases ───────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn hooks_dir_returns_error_outside_repo() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -537,7 +537,7 @@ mod tests {
 
     // ── add() function paths ──────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn add_builtin_dry_run_does_not_write_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -557,7 +557,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_custom_dry_run_does_not_write_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -577,7 +577,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_builtin_force_writes_hook_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -596,7 +596,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_custom_force_writes_hook_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -614,7 +614,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_existing_hook_force_overwrites_without_backup() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -635,7 +635,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_existing_hook_no_force_yes_creates_backup() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -656,7 +656,7 @@ mod tests {
 
     // ── add_quiet() paths ─────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn add_quiet_builtin_writes_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -672,7 +672,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_quiet_custom_writes_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -687,7 +687,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_quiet_existing_hook_force_overwrites() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -705,7 +705,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_quiet_existing_hook_no_force_creates_backup() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -726,7 +726,7 @@ mod tests {
 
     // ── install_builtin / install_custom ───────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn install_builtin_writes_hook_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -744,7 +744,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn install_custom_writes_hook_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -770,7 +770,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn list_installed_empty_hooks_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -785,7 +785,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn list_installed_with_hooks() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -802,7 +802,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn list_installed_skips_bak_and_sample() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -822,7 +822,7 @@ mod tests {
 
     // ── show() paths ──────────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn show_installed_hook_prints_content() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -838,7 +838,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn show_nonexistent_hook_errors() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -855,7 +855,7 @@ mod tests {
 
     // ── remove_hook() paths ───────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn remove_hook_removes_installed_hook() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -872,7 +872,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn remove_hook_nonexistent_errors() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -912,7 +912,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_add_dry_run() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -932,7 +932,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_remove_nonexistent() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -950,7 +950,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_show_nonexistent() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -966,7 +966,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_add_invalid_hook_name() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -986,7 +986,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_add_builtin_with_command_errors() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1007,7 +1007,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_list_installed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1023,7 +1023,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_show_installed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1041,7 +1041,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn run_dispatch_remove_installed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1062,7 +1062,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn add_dry_run_creates_hooks_dir_if_needed() {
         let dir = tempfile::TempDir::new().unwrap();

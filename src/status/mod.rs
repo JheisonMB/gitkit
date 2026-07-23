@@ -149,8 +149,8 @@ fn print_config(scope: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     #[test]
@@ -179,7 +179,7 @@ mod tests {
 
     // ── print_hooks ─────────────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn print_hooks_in_repo_with_no_hooks() {
         let dir = TempDir::new().unwrap();
@@ -194,7 +194,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_hooks_in_repo_without_hooks_dir() {
         let dir = TempDir::new().unwrap();
@@ -208,7 +208,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_hooks_with_sample_file_ignored() {
         let dir = TempDir::new().unwrap();
@@ -226,7 +226,7 @@ mod tests {
 
     // ── print_gitignore ─────────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitignore_when_file_missing() {
         let dir = TempDir::new().unwrap();
@@ -240,7 +240,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitignore_with_patterns() {
         let dir = TempDir::new().unwrap();
@@ -255,7 +255,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitignore_with_only_comments() {
         let dir = TempDir::new().unwrap();
@@ -272,7 +272,7 @@ mod tests {
 
     // ── print_gitattributes ─────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitattributes_when_file_missing() {
         let dir = TempDir::new().unwrap();
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitattributes_with_line_endings() {
         let dir = TempDir::new().unwrap();
@@ -301,7 +301,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitattributes_with_binary() {
         let dir = TempDir::new().unwrap();
@@ -316,7 +316,7 @@ mod tests {
         }
     }
 
-#[serial]
+    #[serial]
     #[test]
     fn print_gitattributes_with_custom_only() {
         let dir = TempDir::new().unwrap();
@@ -347,7 +347,7 @@ mod tests {
 
     // ── run (integration) ──────────────────────────────────────────────────
 
-#[serial]
+    #[serial]
     #[test]
     fn run_in_repo_does_not_panic() {
         let original = std::env::current_dir().ok();
