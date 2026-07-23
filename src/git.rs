@@ -97,6 +97,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "flaky: set_current_dir races with parallel tests"]
     fn init_if_needed_initializes_new_repo() {
         let dir = TempDir::new().unwrap();
         let original = std::env::current_dir().ok();
