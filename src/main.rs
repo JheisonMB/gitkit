@@ -9,6 +9,7 @@ mod git;
 mod hooks;
 mod ignore;
 mod init;
+mod lock;
 mod status;
 mod utils;
 
@@ -56,6 +57,10 @@ enum Command {
         #[command(subcommand)]
         action: builds::BuildCommand,
     },
+    /// Block commits for the duration of an agent session
+    Lock(lock::LockArgs),
+    /// Remove an active commit lock
+    Unlock,
 }
 
 fn main() -> Result<()> {
@@ -69,5 +74,7 @@ fn main() -> Result<()> {
         Some(Command::Attributes { action }) => attributes::run(action),
         Some(Command::Config { action }) => config::run(action),
         Some(Command::Build { action }) => builds::run(action),
+        Some(Command::Lock(args)) => lock::run(args),
+        Some(Command::Unlock) => lock::unlock(),
     }
 }

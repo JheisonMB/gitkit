@@ -32,6 +32,19 @@ Running `gitkit` with no command starts the interactive wizard.
 | `gitkit hooks remove <hook>` | Remove an installed hook |
 | `gitkit hooks show <hook>` | Print hook content |
 
+## Lock
+
+| Command | Description |
+|---|---|
+| `gitkit lock` | Block commits until `gitkit unlock` |
+| `gitkit lock --reason <msg>` | Set the message shown on a blocked commit |
+| `gitkit lock --timeout <duration>` | Auto-expire the lock, e.g. `30m`, `2h` |
+| `gitkit lock status` | Show whether a lock is active, its reason and expiry |
+| `gitkit unlock` | Remove the lock and restore any backed-up hook |
+
+`git commit --no-verify` bypasses the lock — see [Lock](lock.md) for why
+that is accepted rather than defended against.
+
 ## Ignore
 
 | Command | Description |

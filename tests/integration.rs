@@ -405,3 +405,201 @@ fn cli_config_apply_dry_run() {
     assert!(success);
     assert!(output.contains("[dry-run]") || output.contains("already set"));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lock / commit-blocking integration tests (real git repo, real git commit)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn init_git_repo(dir: &std::path::Path) {
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("Failed to run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test User"]);
+    std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+    run(&["add", "README.md"]);
+}
+
+fn git_commit_allow_empty(dir: &std::path::Path, msg: &str) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", msg])
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git commit");
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+#[test]
+fn lock_fixture_commit_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    // Unlocked: commit succeeds.
+    let (ok, _) = git_commit_allow_empty(dir.path(), "initial commit");
+    assert!(ok, "commit should succeed with no lock active");
+
+    // Lock: commit fails and names the reason + how to unlock.
+    let lock_out = Command::new(&binary)
+        .args(["lock", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should fail while locked");
+    assert!(msg.contains("Agent session active"), "message was: {msg}");
+    assert!(msg.contains("gitkit unlock"), "message was: {msg}");
+
+    // Unlock: commit succeeds again.
+    let unlock_out = Command::new(&binary)
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit after unlock");
+    assert!(ok, "commit should succeed after unlock");
+}
+
+#[test]
+fn lock_fixture_expired_lock_does_not_block_commit() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .args(["lock", "--timeout", "30m"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    // Confirm it blocks before expiry.
+    let (ok, _) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should fail while lock has not expired");
+
+    // Rewrite the lock file with an expiry far in the past.
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(
+        &lock_path,
+        r#"{"locked_at":"2000-01-01T00:00:00Z","expires_at":"2000-01-01T00:01:00Z","reason":"stale","operations":["commit"]}"#,
+    )
+    .unwrap();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit after expiry");
+    assert!(ok, "commit should succeed once the lock has expired");
+
+    // status should report the lock as expired.
+    let status_out = Command::new(&binary)
+        .args(["lock", "status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status");
+    let status_msg = String::from_utf8_lossy(&status_out.stdout);
+    assert!(status_msg.contains("expired"), "status was: {status_msg}");
+}
+
+#[test]
+fn lock_fixture_malformed_lock_file_fails_open() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    // Install the hook via a real lock, then corrupt the lock file.
+    let lock_out = Command::new(&binary)
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(&lock_path, "not json at all {{{").unwrap();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit with malformed lock");
+    assert!(ok, "a malformed lock file must never block a commit");
+}
+
+#[test]
+fn lock_fixture_locking_twice_is_idempotent() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let run_lock = |reason: &str| {
+        let out = Command::new(&binary)
+            .args(["lock", "--reason", reason])
+            .current_dir(dir.path())
+            .output()
+            .expect("Failed to run gitkit lock");
+        assert!(out.status.success());
+    };
+    run_lock("first reason");
+    run_lock("second reason");
+
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok);
+    assert!(msg.contains("second reason"), "message was: {msg}");
+    assert!(!msg.contains("first reason"), "message was: {msg}");
+
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    assert!(
+        !hooks_dir.join("pre-commit.gitkit-orig").exists(),
+        "locking twice with no prior user hook must not fabricate a backup"
+    );
+}
+
+#[test]
+fn lock_fixture_preserves_existing_user_pre_commit_hook() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+    let user_hook = "#!/bin/sh\necho user-hook-ran >&2\nexit 0\n";
+    std::fs::write(hooks_dir.join("pre-commit"), user_hook).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(hooks_dir.join("pre-commit"))
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(hooks_dir.join("pre-commit"), perms).unwrap();
+    }
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+    assert!(hooks_dir.join("pre-commit.gitkit-orig").exists());
+
+    let unlock_out = Command::new(&binary)
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let restored = std::fs::read_to_string(hooks_dir.join("pre-commit")).unwrap();
+    assert_eq!(restored, user_hook);
+    assert!(!hooks_dir.join("pre-commit.gitkit-orig").exists());
+
+    // The restored user hook still runs on commit.
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "commit runs user hook");
+    assert!(ok);
+    assert!(msg.contains("user-hook-ran"), "message was: {msg}");
+}

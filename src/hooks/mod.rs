@@ -89,7 +89,7 @@ pub(crate) fn detect_builtin(hook_file: &str, content: &str) -> Option<&'static 
         .find(|b| b.hook == hook_file && content.trim() == b.script.trim())
 }
 
-fn hooks_dir() -> Result<std::path::PathBuf> {
+pub(crate) fn hooks_dir() -> Result<std::path::PathBuf> {
     Ok(find_repo_root()?.join(".git").join("hooks"))
 }
 
@@ -240,7 +240,7 @@ fn show(hook: &str) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn set_executable(path: &Path) -> Result<()> {
+pub(crate) fn set_executable(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
@@ -249,7 +249,7 @@ fn set_executable(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_executable(_path: &Path) -> Result<()> {
+pub(crate) fn set_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
