@@ -57,9 +57,9 @@ enum Command {
         #[command(subcommand)]
         action: builds::BuildCommand,
     },
-    /// Block commits for the duration of an agent session
+    /// Block commits and/or pushes for the duration of an agent session
     Lock(lock::LockArgs),
-    /// Remove an active commit lock
+    /// Remove an active commit/push lock
     Unlock,
 }
 
