@@ -860,3 +860,154 @@ fn push_fixture_preserves_existing_user_pre_push_hook() {
     assert!(ok);
     assert!(msg.contains("user-push-hook-ran"), "message was: {msg}");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `lock status --json` integration tests
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Exit-code assertions live here (real subprocess) rather than in the crate's
+// unit tests, since `lock status --json` calls `process::exit` and running
+// that in-process would kill the test binary.
+
+#[test]
+fn lock_status_json_exit_code_zero_when_unlocked() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let out = Command::new(&binary)
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when no lock is active"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"expired\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"operations\":[]"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"locked_at\":null"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_nonzero_when_locked() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .args(["lock", "--reason", "agent session"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let out = Command::new(&binary)
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when a lock is active"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":true"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"reason\":\"agent session\""),
+        "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"operations\":[\"commit\"]"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_zero_when_expired() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(
+        &lock_path,
+        r#"{"locked_at":"2000-01-01T00:00:00Z","expires_at":"2000-01-01T00:01:00Z","reason":"stale","operations":["commit"]}"#,
+    )
+    .unwrap();
+
+    let out = Command::new(&binary)
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when the lock has expired"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"expired\":true"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"operations\":[\"commit\"]"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_zero_when_malformed() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(&lock_path, "not json at all {{{").unwrap();
+
+    let out = Command::new(&binary)
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "a malformed lock file must report unlocked, not fail the caller"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+}
+
+#[test]
+fn lock_status_json_works_from_a_subdirectory() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let subdir = dir.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    let out = Command::new(&binary)
+        .args(["lock", "status", "--json"])
+        .current_dir(&subdir)
+        .output()
+        .expect("Failed to run gitkit lock status --json from a subdirectory");
+
+    assert!(!out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":true"), "stdout was: {stdout}");
+}

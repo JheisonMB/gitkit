@@ -134,12 +134,17 @@ pub struct LockArgs {
 #[derive(Subcommand)]
 enum LockAction {
     /// Show whether a lock is currently active
-    Status,
+    Status {
+        /// Emit machine-readable JSON instead of the human-readable summary.
+        /// Exit code is 0 when no lock is in force, non-zero when one is.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 pub fn run(args: LockArgs) -> Result<()> {
     match args.action {
-        Some(LockAction::Status) => status(),
+        Some(LockAction::Status { json }) => status(json),
         None => {
             let ops = target_operations(args.push, args.all);
             lock(args.timeout.as_deref(), args.reason.as_deref(), &ops)
@@ -231,30 +236,91 @@ fn lock(timeout: Option<&str>, reason: Option<&str>, ops: &[&str]) -> Result<()>
     Ok(())
 }
 
-fn status() -> Result<()> {
+/// The three states `.git/gitkit.lock` can resolve to on read: absent,
+/// present but unparseable, or present and valid. Kept distinct from
+/// `LockFile` itself so both the human-readable and `--json` status paths
+/// share one read, one interpretation of "no lock" vs "malformed lock", and
+/// one place to extend if a fourth state is ever needed.
+enum LockState {
+    None,
+    Malformed,
+    Present(LockFile),
+}
+
+fn read_lock_state(path: &Path) -> Result<LockState> {
+    if !path.exists() {
+        return Ok(LockState::None);
+    }
+    let content = fs::read_to_string(path).context("Failed to read lock file")?;
+    match LockFile::parse(&content) {
+        Some(lf) => Ok(LockState::Present(lf)),
+        None => Ok(LockState::Malformed),
+    }
+}
+
+fn status(json: bool) -> Result<()> {
     let root = find_repo_root()?;
     let path = lock_file_path(&root);
+    let state = read_lock_state(&path)?;
+    let now = format_rfc3339(unix_now());
 
-    if !path.exists() {
-        println!("No lock active.");
-        return Ok(());
+    if json {
+        let (payload, active) = status_json(&state, &now);
+        println!("{payload}");
+        std::process::exit(if active { 1 } else { 0 });
     }
 
-    let content = fs::read_to_string(&path).context("Failed to read lock file")?;
-    let Some(lf) = LockFile::parse(&content) else {
-        println!("Lock file is malformed - treated as unlocked (nothing is blocked).");
-        return Ok(());
-    };
-
-    if lf.operations.is_empty() {
-        println!("No lock active.");
-        return Ok(());
-    }
-
-    for line in status_report(&lf, &format_rfc3339(unix_now())) {
-        println!("{line}");
+    match state {
+        LockState::None => println!("No lock active."),
+        LockState::Malformed => {
+            println!("Lock file is malformed - treated as unlocked (nothing is blocked).")
+        }
+        LockState::Present(lf) if lf.operations.is_empty() => println!("No lock active."),
+        LockState::Present(lf) => {
+            for line in status_report(&lf, &now) {
+                println!("{line}");
+            }
+        }
     }
     Ok(())
+}
+
+/// Builds the `lock status --json` payload documented in `docs/lock.md`, and
+/// whether the lock is currently in force (used for the exit code). Kept
+/// separate from `status()` so the exact key set and values can be asserted
+/// in tests without spawning a subprocess or triggering `process::exit`.
+///
+/// Key set is part of the documented contract — do not rename, add, or
+/// remove keys without updating `docs/lock.md` and the consumers of it.
+fn status_json(state: &LockState, now: &str) -> (String, bool) {
+    match state {
+        LockState::None | LockState::Malformed => (
+            "{\"active\":false,\"operations\":[],\"locked_at\":null,\"expires_at\":null,\
+             \"reason\":null,\"expired\":false}"
+                .to_string(),
+            false,
+        ),
+        LockState::Present(lf) => {
+            let expired = matches!(&lf.expires_at, Some(exp) if now > exp.as_str());
+            let active = !expired && !lf.operations.is_empty();
+            let ops = lf
+                .operations
+                .iter()
+                .map(|o| format!("\"{}\"", escape(o)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let expires_at = match &lf.expires_at {
+                Some(e) => format!("\"{}\"", escape(e)),
+                None => "null".to_string(),
+            };
+            let payload = format!(
+                "{{\"active\":{active},\"operations\":[{ops}],\"locked_at\":\"{}\",\"expires_at\":{expires_at},\"reason\":\"{}\",\"expired\":{expired}}}",
+                escape(&lf.locked_at),
+                escape(&lf.reason),
+            );
+            (payload, active)
+        }
+    }
 }
 
 /// Builds the `lock status` report as plain lines, kept separate from
@@ -940,7 +1006,7 @@ mod tests {
         let content = std::fs::read_to_string(&lock_path).unwrap();
         assert!(content.contains("\"reason\":\"testing\""));
         assert!(content.contains("\"operations\":[\"commit\"]"));
-        assert!(status().is_ok());
+        assert!(status(false).is_ok());
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1180,7 +1246,7 @@ mod tests {
         let original = std::env::current_dir().ok();
         let _ = std::env::set_current_dir(dir.path());
 
-        assert!(status().is_ok());
+        assert!(status(false).is_ok());
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1196,7 +1262,7 @@ mod tests {
         let original = std::env::current_dir().ok();
         let _ = std::env::set_current_dir(dir.path());
 
-        assert!(status().is_ok());
+        assert!(status(false).is_ok());
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1218,7 +1284,7 @@ mod tests {
         let original = std::env::current_dir().ok();
         let _ = std::env::set_current_dir(dir.path());
 
-        assert!(status().is_ok());
+        assert!(status(false).is_ok());
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1234,7 +1300,7 @@ mod tests {
         let _ = std::env::set_current_dir(dir.path());
 
         let result = run(LockArgs {
-            action: Some(LockAction::Status),
+            action: Some(LockAction::Status { json: false }),
             timeout: None,
             reason: None,
             push: false,
@@ -1388,7 +1454,7 @@ mod tests {
         let _ = std::env::set_current_dir(dir.path());
 
         lock(None, None, &["push"]).unwrap();
-        assert!(status().is_ok());
+        assert!(status(false).is_ok());
         let content =
             std::fs::read_to_string(dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
         assert!(content.contains("\"operations\":[\"push\"]"));
@@ -1396,5 +1462,226 @@ mod tests {
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
+    }
+
+    // ── status_json() ────────────────────────────────────────────────────────
+    //
+    // These exercise `status_json` directly (never `status(true)`, which
+    // calls `process::exit` and would kill the test binary). Exit-code
+    // behavior is covered by the subprocess-based integration tests instead.
+
+    /// Extracts top-level `"key":` names from a flat (no nested objects)
+    /// single-line JSON object, so tests can assert the exact key set
+    /// without pulling in a JSON parsing dependency. A `"key"` is only
+    /// counted if immediately followed by `:` — array elements like
+    /// `"commit"` inside `"operations":[...]` are never followed by `:` and
+    /// so are correctly excluded.
+    fn json_object_keys(json: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+        let mut i = 0;
+        while i < json.len() {
+            if json.as_bytes()[i] == b'"' {
+                if let Some(end) = json[i + 1..].find('"') {
+                    let candidate = &json[i + 1..i + 1 + end];
+                    let after = i + 1 + end + 1;
+                    if json[after..].starts_with(':') {
+                        keys.push(candidate.to_string());
+                        i = after + 1;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
+        keys
+    }
+
+    const EXPECTED_STATUS_JSON_KEYS: [&str; 6] = [
+        "active",
+        "operations",
+        "locked_at",
+        "expires_at",
+        "reason",
+        "expired",
+    ];
+
+    fn assert_exact_key_set(json: &str) {
+        let mut keys = json_object_keys(json);
+        keys.sort();
+        let mut expected: Vec<String> = EXPECTED_STATUS_JSON_KEYS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(keys, expected, "json was: {json}");
+    }
+
+    #[test]
+    fn status_json_exact_key_set_when_no_lock() {
+        let (json, active) = status_json(&LockState::None, "2026-01-01T00:00:00Z");
+        assert!(!active);
+        assert_exact_key_set(&json);
+    }
+
+    #[test]
+    fn status_json_exact_key_set_when_malformed() {
+        let (json, active) = status_json(&LockState::Malformed, "2026-01-01T00:00:00Z");
+        assert!(!active);
+        assert_exact_key_set(&json);
+    }
+
+    #[test]
+    fn status_json_exact_key_set_when_locked() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: Some("2026-01-01T01:00:00Z".to_string()),
+            reason: "agent session".to_string(),
+            operations: vec!["commit".to_string()],
+        };
+        let (json, active) = status_json(&LockState::Present(lf), "2026-01-01T00:05:00Z");
+        assert!(active);
+        assert_exact_key_set(&json);
+    }
+
+    #[test]
+    fn status_json_no_lock_reports_inactive_and_null_fields() {
+        let (json, active) = status_json(&LockState::None, "2026-01-01T00:00:00Z");
+        assert!(!active);
+        assert!(json.contains("\"active\":false"), "json was: {json}");
+        assert!(json.contains("\"operations\":[]"), "json was: {json}");
+        assert!(json.contains("\"locked_at\":null"), "json was: {json}");
+        assert!(json.contains("\"expires_at\":null"), "json was: {json}");
+        assert!(json.contains("\"reason\":null"), "json was: {json}");
+        assert!(json.contains("\"expired\":false"), "json was: {json}");
+    }
+
+    #[test]
+    fn status_json_malformed_reports_same_as_no_lock() {
+        let (none_json, none_active) = status_json(&LockState::None, "2026-01-01T00:00:00Z");
+        let (malformed_json, malformed_active) =
+            status_json(&LockState::Malformed, "2026-01-01T00:00:00Z");
+        assert_eq!(none_json, malformed_json);
+        assert_eq!(none_active, malformed_active);
+    }
+
+    #[test]
+    fn status_json_active_lock_reports_true_and_fields() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: Some("2026-01-01T01:00:00Z".to_string()),
+            reason: "agent session".to_string(),
+            operations: vec!["commit".to_string(), "push".to_string()],
+        };
+        let (json, active) = status_json(&LockState::Present(lf), "2026-01-01T00:05:00Z");
+        assert!(active);
+        assert!(json.contains("\"active\":true"), "json was: {json}");
+        assert!(
+            json.contains("\"operations\":[\"commit\",\"push\"]"),
+            "json was: {json}"
+        );
+        assert!(
+            json.contains("\"locked_at\":\"2026-01-01T00:00:00Z\""),
+            "json was: {json}"
+        );
+        assert!(
+            json.contains("\"expires_at\":\"2026-01-01T01:00:00Z\""),
+            "json was: {json}"
+        );
+        assert!(
+            json.contains("\"reason\":\"agent session\""),
+            "json was: {json}"
+        );
+        assert!(json.contains("\"expired\":false"), "json was: {json}");
+    }
+
+    #[test]
+    fn status_json_never_expiring_lock_reports_null_expiry() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+            reason: "agent session".to_string(),
+            operations: vec!["commit".to_string()],
+        };
+        let (json, active) = status_json(&LockState::Present(lf), "2026-01-01T00:05:00Z");
+        assert!(active);
+        assert!(json.contains("\"expires_at\":null"), "json was: {json}");
+        assert!(json.contains("\"expired\":false"), "json was: {json}");
+    }
+
+    #[test]
+    fn status_json_expired_lock_reports_inactive_but_keeps_operations() {
+        let lf = LockFile {
+            locked_at: "2000-01-01T00:00:00Z".to_string(),
+            expires_at: Some("2000-01-01T00:01:00Z".to_string()),
+            reason: "long expired".to_string(),
+            operations: vec!["commit".to_string(), "push".to_string()],
+        };
+        let (json, active) = status_json(&LockState::Present(lf), "2026-01-01T00:00:00Z");
+        assert!(!active);
+        assert!(json.contains("\"active\":false"), "json was: {json}");
+        assert!(json.contains("\"expired\":true"), "json was: {json}");
+        assert!(
+            json.contains("\"operations\":[\"commit\",\"push\"]"),
+            "json was: {json}"
+        );
+    }
+
+    #[test]
+    fn status_json_empty_operations_reports_inactive() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+            reason: "x".to_string(),
+            operations: vec![],
+        };
+        let (json, active) = status_json(&LockState::Present(lf), "2026-01-01T00:00:00Z");
+        assert!(!active);
+        assert!(json.contains("\"active\":false"), "json was: {json}");
+    }
+
+    // ── read_lock_state() ────────────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn read_lock_state_none_when_file_missing() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+
+        let state = read_lock_state(&dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
+        assert!(matches!(state, LockState::None));
+    }
+
+    #[serial]
+    #[test]
+    fn read_lock_state_malformed_when_content_unparseable() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let path = dir.path().join(".git").join(LOCK_FILE_NAME);
+        std::fs::write(&path, "not json").unwrap();
+
+        let state = read_lock_state(&path).unwrap();
+        assert!(matches!(state, LockState::Malformed));
+    }
+
+    #[serial]
+    #[test]
+    fn read_lock_state_present_when_valid() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let path = dir.path().join(".git").join(LOCK_FILE_NAME);
+        lock_write_fixture(&path, "commit");
+
+        let state = read_lock_state(&path).unwrap();
+        assert!(matches!(state, LockState::Present(_)));
+    }
+
+    fn lock_write_fixture(path: &Path, op: &str) {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+            reason: "x".to_string(),
+            operations: vec![op.to_string()],
+        };
+        std::fs::write(path, lf.to_json()).unwrap();
     }
 }

@@ -14,6 +14,7 @@ gitkit lock                              # block commits until `gitkit unlock`
 gitkit lock --reason "Agent session"     # custom message shown on a blocked commit
 gitkit lock --timeout 30m                # auto-expires after 30 minutes
 gitkit lock status                       # show whether a lock is active
+gitkit lock status --json                # machine-readable status, see below
 gitkit unlock                            # remove the lock
 ```
 
@@ -34,6 +35,73 @@ check passes. `gitkit unlock` restores it and removes the backup.
 
 The lock is per-repository, local only, and never committed or pushed —
 it lives entirely under `.git/`.
+
+## Machine-readable status: `lock status --json`
+
+`gitkit lock status --json` emits the same state the human-readable
+`gitkit lock status` shows, as a single line of JSON on stdout, so another
+program can check whether a repository is locked instead of discovering it
+by having a commit rejected. This is a **read-only** surface: gitkit does
+not call out to, or know about, whatever consumes it.
+
+```bash
+$ gitkit lock status --json
+{"active":true,"operations":["commit"],"locked_at":"2026-01-01T00:00:00Z","expires_at":null,"reason":"Agent session","expired":false}
+```
+
+Fields, all always present (this key set is a supported contract — do not
+rely on a key being renamed or removed without a version bump):
+
+| Key           | Type              | Meaning                                                                 |
+|---------------|-------------------|--------------------------------------------------------------------------|
+| `active`      | `bool`            | Whether the lock currently blocks the operations it lists — `false` if there is no lock, the lock file is malformed, `operations` is empty, or the lock has expired. |
+| `operations`  | `string[]`        | The operations the lock covers (e.g. `"commit"`, `"push"`). Empty when there is no lock. |
+| `locked_at`   | `string \| null`  | RFC 3339 timestamp the lock was set, or `null` when there is no lock.    |
+| `expires_at`  | `string \| null`  | RFC 3339 timestamp the lock expires, or `null` for a lock with no timeout (or no lock at all). |
+| `reason`      | `string \| null`  | The `--reason` text, or `null` when there is no lock.                    |
+| `expired`     | `bool`            | Whether `expires_at` is in the past, resolved at read time. There is no background process — expiry is only ever checked when something reads the lock. |
+
+A missing or malformed lock file reports the same payload as no lock at
+all (`active: false`, every other field `null`/empty) — a corrupt lock
+file never blocks a caller, matching the human-readable behavior above.
+
+**Exit code** doubles as the machine-readable signal, so a shell caller can
+branch without parsing JSON: `0` when no lock is in force (including an
+expired or malformed one), non-zero when one is active. The JSON is still
+written to stdout in both cases.
+
+`gitkit lock status --json` works from any directory inside the repository,
+the same as the human-readable form.
+
+## File format: `.git/gitkit.lock`
+
+The lock state lives at `.git/gitkit.lock` as a single line of JSON. A
+consumer may read this file directly instead of shelling out to
+`gitkit lock status --json` — both read the same file, and the schema
+below is the supported contract for either path.
+
+```json
+{"locked_at":"2026-01-01T00:00:00Z","expires_at":"2026-01-01T00:30:00Z","reason":"Agent session","operations":["commit"]}
+```
+
+| Key           | Type              | Meaning                                        |
+|---------------|-------------------|-------------------------------------------------|
+| `locked_at`   | `string`          | RFC 3339 timestamp the lock was set.             |
+| `expires_at`  | `string \| null`  | RFC 3339 timestamp the lock expires, or `null` for no timeout. |
+| `reason`      | `string`          | The `--reason` text, or empty string if none was given. |
+| `operations`  | `string[]`        | The operations the lock covers.                  |
+
+Notes for a direct reader:
+
+- A missing file means no lock is active.
+- Expiry is not enforced by anything in the file itself — a reader must
+  compare `expires_at` against the current time itself, the same way
+  `gitkit lock status --json` resolves its `expired` field.
+- Treat an unparseable file the same as a missing one: unlocked. gitkit's
+  own hooks and `status` do the same, so a corrupt file never blocks
+  anything on either side.
+- This file is local only, lives entirely under `.git/`, and is never
+  committed or pushed.
 
 ## Limitation: `--no-verify`
 
