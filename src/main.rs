@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod attributes;
+mod autoupdate;
 mod builds;
 mod clone;
 mod config;
@@ -65,6 +66,7 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    autoupdate::check_for_update();
     match cli.command {
         Some(Command::Init) | None => init::run(),
         Some(Command::Status) => status::run(),
