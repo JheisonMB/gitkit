@@ -1129,6 +1129,138 @@ fn git_commit_with_path(
     (output.status.success(), format!("{stdout}{stderr}"))
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// `status --strict` / `status --repair` integration tests (real subprocess)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Exit-code assertions live here rather than in the crate's unit tests, since
+// `status --strict` calls `process::exit` when a dormant hook is found, and
+// running that in-process would kill the test binary (same rationale as the
+// `lock status --json` tests above).
+
+#[test]
+fn status_strict_exits_nonzero_when_a_hook_is_dormant() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+
+    let binary = gitkit_binary();
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["hooks", "add", "no-secrets", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add");
+    assert!(install_out.status.success());
+
+    // Simulate the exact regression this spec exists to catch: a hook file
+    // that is present and correct but was never marked executable.
+    let hook_path = hooks_dir.join("pre-commit");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&hook_path, perms).unwrap();
+    }
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict");
+
+    #[cfg(unix)]
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when a hook is dormant"
+    );
+    #[cfg(not(unix))]
+    assert!(
+        out.status.success(),
+        "the executable bit does not apply on non-Unix targets"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("dormant"), "stdout was: {stdout}");
+}
+
+#[test]
+fn status_strict_exits_zero_with_no_dormant_hooks() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
+    let binary = gitkit_binary();
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when nothing is dormant"
+    );
+}
+
+#[test]
+fn status_repair_sets_executable_bit_and_strict_then_passes() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+    let binary = gitkit_binary();
+
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["hooks", "add", "no-secrets", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add");
+    assert!(install_out.status.success());
+
+    let hook_path = hooks_dir.join("pre-commit");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&hook_path, perms).unwrap();
+    }
+
+    let repair_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["status", "--repair"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --repair");
+    assert!(repair_out.status.success());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        assert!(
+            perms.mode() & 0o111 != 0,
+            "repair should have set the executable bit"
+        );
+    }
+
+    let strict_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict after repair");
+    assert!(
+        strict_out.status.success(),
+        "repaired hook must no longer be dormant"
+    );
+}
+
 #[test]
 fn no_invisibles_fixture_blocks_zero_width_space_then_accepts_clean_commit() {
     let dir = TempDir::new().unwrap();

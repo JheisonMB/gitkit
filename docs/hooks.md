@@ -134,3 +134,49 @@ gitkit hooks remove <hook>   # remove an installed hook
 
 The `gitkit` wizard also shows installed hooks, pre-selects them and
 allows removal interactively.
+
+## Hook health
+
+A hook file that exists is not the same as a hook that runs. Git silently
+ignores a hook file that isn't marked executable — it doesn't error, it just
+never fires, and the only sign is a warning
+(`hook was ignored because it's not set as executable`) that's easy to miss
+in commit scrollback. `gitkit status` reports each installed hook's actual
+health, not just its presence:
+
+```bash
+gitkit status
+```
+
+```
+Hooks:
+  ✓ conventional-commits (commit-msg) — active
+  ✗ no-secrets (pre-commit) — dormant: not executable, so git ignores it and never runs it (fix with `gitkit status --repair`)
+  ~ pre-push — modified: "cargo test"
+```
+
+- **active** — installed, executable, matches a built-in verbatim. Git runs it.
+- **dormant** — installed and matches a built-in verbatim, but is not
+  executable. **Git ignores it.** This is the state a broken install or a
+  lost executable bit leaves behind.
+- **modified** — installed, but its content doesn't match any built-in
+  (a hand-edited built-in, or a custom command installed with
+  `gitkit hooks add <hook> "<command>"`). Not an error — gitkit never
+  touches it.
+
+A hook with no file at all simply doesn't appear in the list.
+
+```bash
+gitkit status --repair   # sets the executable bit on every dormant hook
+gitkit status --strict   # exits non-zero if any hook is dormant (for CI)
+```
+
+`--repair` only sets the executable bit on hooks classified `dormant` — the
+content already matches a built-in verbatim, so there's nothing to rewrite.
+It never touches a `modified` hook (that might be a deliberate edit) and
+never installs a hook that isn't there at all (that's what `hooks add` is
+for). A bare `gitkit status` never modifies anything; `--repair` is always
+opt-in.
+
+On Windows the executable bit doesn't exist, so a hook there is never
+reported `dormant`.

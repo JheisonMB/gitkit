@@ -261,6 +261,63 @@ pub(crate) fn set_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+pub(crate) fn is_executable(path: &Path) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    let perms = fs::metadata(path)?.permissions();
+    Ok(perms.mode() & 0o111 != 0)
+}
+
+/// The executable bit doesn't exist on non-Unix targets, so a hook there is
+/// never `Dormant` — git runs whatever is on disk regardless of mode.
+#[cfg(not(unix))]
+pub(crate) fn is_executable(_path: &Path) -> Result<bool> {
+    Ok(true)
+}
+
+/// Health of an installed hook file, as reported by `gitkit status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HookHealth {
+    /// Content matches a known builtin verbatim and is executable — git runs it.
+    Active,
+    /// Content matches a known builtin verbatim but is not executable — git
+    /// silently ignores the file and never runs it.
+    Dormant,
+    /// Present but its content matches no builtin. Not an error: the user
+    /// may have edited it deliberately, or it's a custom (non-builtin) hook.
+    Modified,
+    /// No file at this hook's path.
+    Absent,
+}
+
+/// Classifies an installed hook file's health for `gitkit status`, by
+/// comparing its content against the builtin catalogue via [`detect_builtin`].
+/// Reads the file itself rather than trusting a caller-supplied string, so
+/// non-UTF-8 content is classified `Modified` instead of erroring — git runs
+/// a hook regardless of its encoding, so an unreadable-as-text file is not a
+/// failure, just content gitkit can't match against a builtin.
+pub(crate) fn classify_hook(hook_name: &str, path: &Path) -> Result<HookHealth> {
+    if !path.exists() {
+        return Ok(HookHealth::Absent);
+    }
+
+    let bytes = fs::read(path).with_context(|| format!("Failed to read hook '{hook_name}'"))?;
+    let is_builtin = match std::str::from_utf8(&bytes) {
+        Ok(content) => detect_builtin(hook_name, content).is_some(),
+        Err(_) => false,
+    };
+
+    if !is_builtin {
+        return Ok(HookHealth::Modified);
+    }
+
+    if is_executable(path)? {
+        Ok(HookHealth::Active)
+    } else {
+        Ok(HookHealth::Dormant)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -910,6 +967,118 @@ mod tests {
             let perms = std::fs::metadata(&hook_path).unwrap().permissions();
             assert_eq!(perms.mode() & 0o777, 0o755);
         }
+    }
+
+    // ── classify_hook() / is_executable() ───────────────────────────────────
+
+    #[test]
+    fn classify_hook_active_when_matching_builtin_and_executable() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        std::fs::write(&path, no_secrets.script).unwrap();
+        set_executable(&path).unwrap();
+        assert_eq!(
+            classify_hook("pre-commit", &path).unwrap(),
+            HookHealth::Active
+        );
+    }
+
+    #[test]
+    fn classify_hook_dormant_when_matching_builtin_but_executable_bit_removed() {
+        // Regression test for GK-D: a hook file that git silently ignores
+        // because it was never marked executable (the bug this spec exists
+        // to detect) must be reported as `Dormant`, not `Active`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        std::fs::write(&path, no_secrets.script).unwrap();
+        set_executable(&path).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o644);
+            std::fs::set_permissions(&path, perms).unwrap();
+        }
+
+        let health = classify_hook("pre-commit", &path).unwrap();
+        #[cfg(unix)]
+        assert_eq!(health, HookHealth::Dormant);
+        #[cfg(not(unix))]
+        assert_eq!(health, HookHealth::Active);
+    }
+
+    #[test]
+    fn classify_hook_modified_when_content_hand_edited() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        std::fs::write(
+            &path,
+            format!("{}\necho 'hand edited'\n", no_secrets.script),
+        )
+        .unwrap();
+        set_executable(&path).unwrap();
+        assert_eq!(
+            classify_hook("pre-commit", &path).unwrap(),
+            HookHealth::Modified
+        );
+    }
+
+    #[test]
+    fn classify_hook_modified_for_custom_non_builtin_command() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-push");
+        std::fs::write(&path, "#!/bin/sh\ncargo test\n").unwrap();
+        set_executable(&path).unwrap();
+        assert_eq!(
+            classify_hook("pre-push", &path).unwrap(),
+            HookHealth::Modified
+        );
+    }
+
+    #[test]
+    fn classify_hook_absent_when_no_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("commit-msg");
+        assert_eq!(
+            classify_hook("commit-msg", &path).unwrap(),
+            HookHealth::Absent
+        );
+    }
+
+    #[test]
+    fn classify_hook_non_utf8_content_is_modified_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        std::fs::write(&path, [0x23, 0x21, 0xff, 0xfe, 0x00, 0x01]).unwrap();
+        set_executable(&path).unwrap();
+        let result = classify_hook("pre-commit", &path);
+        assert_eq!(result.unwrap(), HookHealth::Modified);
+    }
+
+    #[test]
+    fn is_executable_true_after_set_executable() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("hook");
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        set_executable(&path).unwrap();
+        assert!(is_executable(&path).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn is_executable_false_without_exec_bit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("hook");
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&path, perms).unwrap();
+        assert!(!is_executable(&path).unwrap());
     }
 
     // ── run() dispatch ────────────────────────────────────────────────────

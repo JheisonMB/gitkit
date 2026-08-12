@@ -17,7 +17,9 @@ Running `gitkit` with no command starts the interactive wizard.
 | Command | Description |
 |---|---|
 | `gitkit` / `gitkit init` | Interactive wizard to configure the repo |
-| `gitkit status` | Show current configuration status |
+| `gitkit status` | Show current configuration status, including per-hook health |
+| `gitkit status --repair` | Set the executable bit on every dormant hook |
+| `gitkit status --strict` | Exit non-zero if any hook is dormant (for CI) |
 | `gitkit clone <repo> [dir]` | Clone a repository and run the wizard |
 | `gitkit clone -b <branch> <repo>` | Clone a specific branch |
 

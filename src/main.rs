@@ -30,7 +30,7 @@ enum Command {
     /// Interactive wizard to configure your repo
     Init,
     /// Show current configuration status
-    Status,
+    Status(status::StatusArgs),
     /// Clone repository and run init wizard
     Clone(clone::CloneArgs),
     /// Manage git hooks
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
     autoupdate::check_for_update();
     match cli.command {
         Some(Command::Init) | None => init::run(),
-        Some(Command::Status) => status::run(),
+        Some(Command::Status(args)) => status::run(args),
         Some(Command::Clone(args)) => clone::run(args),
         Some(Command::Hooks { action }) => hooks::run(action),
         Some(Command::Ignore { action }) => ignore::run(action),
