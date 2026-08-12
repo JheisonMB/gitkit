@@ -12,6 +12,7 @@ pub enum HooksCommand {
     ///
     /// Built-in (hook inferred automatically):
     ///   gitkit hooks add conventional-commits
+    ///   gitkit hooks add no-trailers
     ///   gitkit hooks add no-secrets
     ///   gitkit hooks add branch-naming
     ///

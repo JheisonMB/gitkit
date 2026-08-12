@@ -304,6 +304,7 @@ Run `gitkit hooks list --available` to see these without leaving the terminal.
 | Name | Hook | Description |
 |---|---|---|
 | `conventional-commits` | `commit-msg` | Validates Conventional Commits format |
+| `no-trailers` | `commit-msg` | Rejects commit messages carrying AI attribution trailers |
 | `no-secrets` | `pre-commit` | Detects common secret patterns in staged changes |
 | `branch-naming` | `pre-commit` | Validates branch name matches convention |
 
