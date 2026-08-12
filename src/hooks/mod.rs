@@ -151,6 +151,7 @@ fn add(
     fs::create_dir_all(&dir).context("Failed to create hooks directory")?;
     fs::write(&path, &script).with_context(|| format!("Failed to write hook '{hook_name}'"))?;
     set_executable(&path)?;
+    record_applied(hook_or_builtin);
     println!("Installed hook '{hook_name}'.");
     Ok(())
 }
@@ -167,7 +168,16 @@ fn add_quiet(hook_or_builtin: &str, command: Option<&str>, force: bool) -> Resul
     fs::create_dir_all(&dir).context("Failed to create hooks directory")?;
     fs::write(&path, &script).with_context(|| format!("Failed to write hook '{hook_name}'"))?;
     set_executable(&path)?;
+    record_applied(hook_or_builtin);
     Ok(())
+}
+
+/// Records the hook just installed in the machine-wide registry (best
+/// effort — never fails the install this is called from).
+fn record_applied(hook_or_builtin: &str) {
+    if let Ok(root) = find_repo_root() {
+        crate::registry::record_best_effort(&root, &[format!("hook:{hook_or_builtin}")]);
+    }
 }
 
 /// Resolves (hook_name, script) from either a built-in name or a (hook, command) pair.

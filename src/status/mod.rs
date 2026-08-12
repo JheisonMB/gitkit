@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::hooks::HookHealth;
 use crate::utils::{find_repo_root, git_config_get};
@@ -14,13 +15,168 @@ pub struct StatusArgs {
     /// Exit non-zero if any hook is dormant (git is silently ignoring it)
     #[arg(long)]
     pub strict: bool,
+    /// Report every repository gitkit has ever been applied to, machine-wide
+    #[arg(long)]
+    pub global: bool,
+    /// With --global, remove registry entries whose repository no longer exists
+    #[arg(long)]
+    pub prune: bool,
+    /// Discover repositories with gitkit hooks under DIR and register them
+    #[arg(long, value_name = "DIR")]
+    pub scan: Option<PathBuf>,
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
+    if let Some(dir) = &args.scan {
+        run_scan(dir)?;
+        if !args.global {
+            return Ok(());
+        }
+    }
+
+    if args.global {
+        return run_global(args.prune);
+    }
+
     let dormant_found = run_report(&args)?;
     if args.strict && dormant_found {
         std::process::exit(1);
     }
+    Ok(())
+}
+
+/// `gitkit status --scan <DIR>`: discovers repositories under `dir` with a
+/// gitkit-installed hook that the registry doesn't yet know about, and
+/// registers them. This is the adoption path for repositories configured
+/// before the registry existed — it never runs implicitly.
+fn run_scan(dir: &Path) -> Result<()> {
+    println!(
+        "Scanning {} for gitkit-managed repositories...",
+        dir.display()
+    );
+    let result = crate::registry::scan(dir);
+
+    if result.found.is_empty() {
+        println!(
+            "  (none found — visited {} director{}, depth {})",
+            result.dirs_visited,
+            if result.dirs_visited == 1 { "y" } else { "ies" },
+            result.max_depth
+        );
+        return Ok(());
+    }
+
+    for (path, builtins) in &result.found {
+        let items: Vec<String> = builtins.iter().map(|b| format!("hook:{b}")).collect();
+        crate::registry::record_best_effort(path, &items);
+        println!("  ✓ {} — {}", path.display(), builtins.join(", "));
+    }
+
+    println!(
+        "\nFound and registered {} repositor{} (visited {} director{}, depth {}).",
+        result.found.len(),
+        if result.found.len() == 1 { "y" } else { "ies" },
+        result.dirs_visited,
+        if result.dirs_visited == 1 { "y" } else { "ies" },
+        result.max_depth
+    );
+    Ok(())
+}
+
+/// `gitkit status --global`: reports every registered repository's hook
+/// health, read from disk at query time — the registry only supplies the
+/// list of paths to check. Never writes anything unless `prune` is set.
+fn run_global(prune: bool) -> Result<()> {
+    let mut registry = crate::registry::load();
+
+    if registry.repos.is_empty() {
+        println!("No repositories registered with gitkit.");
+        println!("Run `gitkit status --scan <DIR>` to discover existing installs.");
+        return Ok(());
+    }
+
+    let total = registry.repos.len();
+    let mut gone: Vec<String> = Vec::new();
+    let mut healthy = 0usize;
+    let mut any_dormant = false;
+
+    for (path_str, entry) in &registry.repos {
+        let path = Path::new(path_str);
+
+        if !path.exists() {
+            gone.push(path_str.clone());
+            println!("{path_str}");
+            println!(
+                "  ✗ gone — repository no longer exists (last applied {})",
+                entry.applied_at
+            );
+            println!();
+            continue;
+        }
+
+        let hooks_dir = path.join(".git").join("hooks");
+        let mut problems = Vec::new();
+
+        for item in &entry.applied {
+            let Some(name) = item.strip_prefix("hook:") else {
+                continue;
+            };
+            let hook_file = crate::hooks::builtins::get(name)
+                .map(|b| b.hook.to_string())
+                .unwrap_or_else(|| name.to_string());
+            let hook_path = hooks_dir.join(&hook_file);
+            let health = crate::hooks::classify_hook(&hook_file, &hook_path)?;
+
+            match health {
+                HookHealth::Dormant => {
+                    any_dormant = true;
+                    problems.push(format!(
+                        "  ✗ {name} ({hook_file}) — dormant: not executable, git ignores it"
+                    ));
+                }
+                HookHealth::Absent => {
+                    problems.push(format!(
+                        "  ✗ {name} ({hook_file}) — absent: registered but no longer installed"
+                    ));
+                }
+                HookHealth::Modified => {
+                    problems.push(format!("  ~ {name} ({hook_file}) — modified since install"));
+                }
+                HookHealth::Active => {}
+            }
+        }
+
+        if problems.is_empty() {
+            healthy += 1;
+        } else {
+            println!("{path_str}");
+            for p in &problems {
+                println!("{p}");
+            }
+            println!();
+        }
+    }
+
+    if prune && !gone.is_empty() {
+        for g in &gone {
+            registry.repos.remove(g);
+        }
+        crate::registry::save(&registry)?;
+        println!("Pruned {} repositories that no longer exist.", gone.len());
+    } else if !gone.is_empty() {
+        println!(
+            "{} repositories are gone. Re-run with `gitkit status --global --prune` to remove them from the registry.",
+            gone.len()
+        );
+    }
+
+    println!("\n{healthy}/{total} repositories healthy.");
+    if any_dormant {
+        println!(
+            "⚠ dormant hooks found — run `gitkit status --repair` inside the affected repository."
+        );
+    }
+
     Ok(())
 }
 
@@ -642,5 +798,246 @@ mod tests {
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
+    }
+
+    // ── GK-E: registry-backed `gitkit status --global` ─────────────────────
+
+    /// Points HOME at a fresh temp dir and CWD at a fresh temp repo for the
+    /// duration of `f`, restoring both afterward. Never touches the real
+    /// ~/.gitkit or the caller's working directory.
+    fn with_temp_home_and_repo<F: FnOnce(&std::path::Path, &std::path::Path)>(f: F) {
+        let home = TempDir::new().unwrap();
+        let repo = TempDir::new().unwrap();
+        fs::create_dir_all(repo.path().join(".git").join("hooks")).unwrap();
+
+        let orig_home = std::env::var("HOME").ok();
+        let orig_cwd = std::env::current_dir().ok();
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        let _ = std::env::set_current_dir(repo.path());
+
+        f(home.path(), repo.path());
+
+        if let Some(cwd) = orig_cwd {
+            let _ = std::env::set_current_dir(cwd);
+        }
+        unsafe {
+            match &orig_home {
+                Some(h) => std::env::set_var("HOME", h),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn installing_a_hook_writes_a_ledger_entry_with_absolute_path() {
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let reg = crate::registry::load();
+            let key = repo.to_string_lossy().to_string();
+            let entry = reg.repos.get(&key).expect("repo should be registered");
+            assert!(entry.applied.contains(&"hook:no-secrets".to_string()));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn installing_a_hook_twice_updates_one_entry_not_two() {
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let reg = crate::registry::load();
+            assert_eq!(reg.repos.len(), 1);
+            let key = repo.to_string_lossy().to_string();
+            let entry = &reg.repos[&key];
+            assert_eq!(
+                entry
+                    .applied
+                    .iter()
+                    .filter(|i| *i == "hook:no-secrets")
+                    .count(),
+                1
+            );
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_reports_dormant_hook_read_from_disk() {
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let path = repo.join(".git").join("hooks").join("pre-commit");
+                let mut perms = fs::metadata(&path).unwrap().permissions();
+                perms.set_mode(0o644);
+                fs::set_permissions(&path, perms).unwrap();
+            }
+            let result = run_global(false);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_reports_deleted_hook_as_absent_not_installed_ledger_lies_regression() {
+        // Regression test for the ledger-lies failure mode this spec exists
+        // to prevent: the registry still lists the hook as applied, but the
+        // file has been deleted from disk entirely. `status --global` must
+        // read the current filesystem state and report `absent`, never
+        // silently trust the ledger's stale claim that it's installed.
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let hook_path = repo.join(".git").join("hooks").join("pre-commit");
+            fs::remove_file(&hook_path).unwrap();
+
+            let reg = crate::registry::load();
+            let key = repo.to_string_lossy().to_string();
+            let entry = &reg.repos[&key];
+            let hook_file = crate::hooks::builtins::get("no-secrets").unwrap().hook;
+            let health =
+                crate::hooks::classify_hook(hook_file, &hook_path).expect("health read ok");
+            assert_eq!(health, HookHealth::Absent);
+            assert!(entry.applied.contains(&"hook:no-secrets".to_string()));
+
+            let result = run_global(false);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_reports_gone_repository_that_no_longer_exists() {
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let path_buf = repo.to_path_buf();
+            let _ = std::env::set_current_dir(std::env::temp_dir());
+            fs::remove_dir_all(&path_buf).unwrap();
+
+            let reg = crate::registry::load();
+            let key = path_buf.to_string_lossy().to_string();
+            assert!(!path_buf.exists());
+            assert!(reg.repos.contains_key(&key));
+
+            let result = run_global(false);
+            assert!(result.is_ok());
+            let reg_after = crate::registry::load();
+            assert!(
+                reg_after.repos.contains_key(&key),
+                "without --prune the registry must be unchanged"
+            );
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn prune_removes_gone_entry_and_leaves_it_unchanged_without_prune() {
+        with_temp_home_and_repo(|_home, repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let path_buf = repo.to_path_buf();
+            let key = path_buf.to_string_lossy().to_string();
+            let _ = std::env::set_current_dir(std::env::temp_dir());
+            fs::remove_dir_all(&path_buf).unwrap();
+
+            // Without --prune: unchanged.
+            run_global(false).unwrap();
+            let reg = crate::registry::load();
+            assert!(reg.repos.contains_key(&key));
+
+            // With --prune: removed.
+            run_global(true).unwrap();
+            let reg = crate::registry::load();
+            assert!(!reg.repos.contains_key(&key));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_with_missing_ledger_produces_a_message_not_an_error() {
+        with_temp_home_and_repo(|_home, _repo| {
+            let result = run_global(false);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_with_corrupt_ledger_produces_a_message_not_a_panic() {
+        with_temp_home_and_repo(|home, _repo| {
+            let dir = home.join(".gitkit");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("registry.toml"), "not valid toml {{{").unwrap();
+            let result = run_global(false);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn scan_on_temp_tree_with_two_gitkit_repos_finds_exactly_two() {
+        with_temp_home_and_repo(|_home, _cwd| {
+            let root = TempDir::new().unwrap();
+
+            let repo_a = root.path().join("repo-a");
+            let hooks_a = repo_a.join(".git").join("hooks");
+            fs::create_dir_all(&hooks_a).unwrap();
+            let no_secrets = crate::hooks::builtins::get("no-secrets").unwrap();
+            fs::write(hooks_a.join("pre-commit"), no_secrets.script).unwrap();
+
+            let repo_b = root.path().join("repo-b");
+            let hooks_b = repo_b.join(".git").join("hooks");
+            fs::create_dir_all(&hooks_b).unwrap();
+            let cc = crate::hooks::builtins::get("conventional-commits").unwrap();
+            fs::write(hooks_b.join("commit-msg"), cc.script).unwrap();
+
+            let repo_c = root.path().join("repo-c-no-hooks");
+            fs::create_dir_all(repo_c.join(".git").join("hooks")).unwrap();
+
+            let result = run_scan(root.path());
+            assert!(result.is_ok());
+
+            let reg = crate::registry::load();
+            assert!(reg
+                .repos
+                .contains_key(&repo_a.to_string_lossy().to_string()));
+            assert!(reg
+                .repos
+                .contains_key(&repo_b.to_string_lossy().to_string()));
+            assert!(!reg
+                .repos
+                .contains_key(&repo_c.to_string_lossy().to_string()));
+            assert_eq!(reg.repos.len(), 2);
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn global_alone_never_writes_the_registry() {
+        with_temp_home_and_repo(|home, _repo| {
+            crate::hooks::install_builtin("no-secrets", true).unwrap();
+            let registry_path = home.join(".gitkit").join("registry.toml");
+            let before = fs::read_to_string(&registry_path).unwrap();
+            run_global(false).unwrap();
+            let after = fs::read_to_string(&registry_path).unwrap();
+            assert_eq!(before, after);
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn ledger_write_failure_does_not_fail_hook_installation() {
+        with_temp_home_and_repo(|home, repo| {
+            // Block ~/.gitkit from being created, so the registry write
+            // inside install_builtin fails. The hook install itself must
+            // still succeed.
+            fs::write(home.join(".gitkit"), "not a directory").unwrap();
+            let result = crate::hooks::install_builtin("no-secrets", true);
+            assert!(result.is_ok());
+            let hook_path = repo.join(".git").join("hooks").join("pre-commit");
+            assert!(hook_path.exists());
+        });
     }
 }

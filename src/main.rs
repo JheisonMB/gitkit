@@ -11,6 +11,7 @@ mod hooks;
 mod ignore;
 mod init;
 mod lock;
+mod registry;
 mod status;
 mod utils;
 

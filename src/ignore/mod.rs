@@ -46,6 +46,7 @@ pub(crate) fn add_templates(templates: &str, force: bool) -> Result<()> {
         merge_gitignore(&path, &new_content)
     };
     fs::write(&path, merged).context("Failed to write .gitignore")?;
+    crate::registry::record_best_effort(&root, &[format!("gitignore:{templates}")]);
     Ok(())
 }
 
@@ -79,6 +80,7 @@ fn add(templates: &str, _yes: bool, force: bool, dry_run: bool) -> Result<()> {
     }
 
     fs::write(&path, merged).context("Failed to write .gitignore")?;
+    crate::registry::record_best_effort(&root, &[format!("gitignore:{templates}")]);
     println!("Updated .gitignore for: {templates}");
     Ok(())
 }

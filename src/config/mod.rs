@@ -179,6 +179,10 @@ pub(crate) fn apply_config_keys(
             _ => apply_single_config(key, scope)?,
         }
     }
+    if let Ok(root) = find_repo_root() {
+        let items: Vec<String> = keys.iter().map(|k| format!("config:{k}")).collect();
+        crate::registry::record_best_effort(&root, &items);
+    }
     Ok(())
 }
 
@@ -279,6 +283,13 @@ fn apply_configs(configs: GitConfigs, dry_run: bool, scope: ConfigScope) -> Resu
 
     if already_set == configs.len() {
         println!("\nAll configs already applied.");
+    }
+
+    if !dry_run {
+        if let Ok(root) = find_repo_root() {
+            let items: Vec<String> = configs.iter().map(|(k, _)| format!("config:{k}")).collect();
+            crate::registry::record_best_effort(&root, &items);
+        }
     }
 
     Ok(())

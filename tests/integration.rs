@@ -115,6 +115,7 @@ fn cli_status_outside_repo() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status"])
         .current_dir(dir.path())
         .output()
@@ -130,6 +131,7 @@ fn cli_hooks_list_outside_repo() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "list"])
         .current_dir(dir.path())
         .output()
@@ -147,6 +149,7 @@ fn cli_build_list_empty() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["build", "list"])
         .current_dir(dir.path())
         .output()
@@ -167,6 +170,7 @@ fn cli_hooks_add_invalid_builtin() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "nonexistent-builtin"])
         .current_dir(dir.path())
         .output()
@@ -191,6 +195,7 @@ fn cli_hooks_add_custom_hook() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "pre-push", "echo test"])
         .current_dir(dir.path())
         .output()
@@ -217,6 +222,7 @@ fn cli_hooks_add_builtin_conventional_commits() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "conventional-commits"])
         .current_dir(dir.path())
         .output()
@@ -243,6 +249,7 @@ fn cli_hooks_remove_installed_hook() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "remove", "--yes", "pre-push"])
         .current_dir(dir.path())
         .output()
@@ -266,6 +273,7 @@ fn cli_hooks_remove_nonexistent_hook() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "remove", "--yes", "nonexistent-hook"])
         .current_dir(dir.path())
         .output()
@@ -289,6 +297,7 @@ fn cli_hooks_show_installed_hook() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "show", "pre-push"])
         .current_dir(dir.path())
         .output()
@@ -308,6 +317,7 @@ fn cli_hooks_show_nonexistent_hook() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "show", "nonexistent"])
         .current_dir(dir.path())
         .output()
@@ -324,6 +334,7 @@ fn cli_hooks_add_invalid_hook_name() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "not-a-real-hook", "echo hi"])
         .current_dir(dir.path())
         .output()
@@ -344,6 +355,7 @@ fn cli_hooks_add_custom_hook_creates_executable() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "pre-commit", "echo hello"])
         .current_dir(dir.path())
         .output()
@@ -367,6 +379,7 @@ fn cli_hooks_add_with_dry_run() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args([
             "hooks",
             "add",
@@ -398,6 +411,7 @@ fn cli_ignore_add_dry_run() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["ignore", "add", "--yes", "--dry-run", "rust"])
         .current_dir(dir.path())
         .output()
@@ -415,6 +429,7 @@ fn cli_attributes_init_dry_run() {
     let output = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["attributes", "init", "--yes", "--dry-run"])
         .current_dir(dir.path())
         .output()
@@ -483,6 +498,7 @@ fn lock_fixture_commit_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--reason", "Agent session active"])
         .current_dir(dir.path())
         .output()
@@ -498,6 +514,7 @@ fn lock_fixture_commit_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
     let unlock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["unlock"])
         .current_dir(dir.path())
         .output()
@@ -517,6 +534,7 @@ fn lock_fixture_expired_lock_does_not_block_commit() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--timeout", "30m"])
         .current_dir(dir.path())
         .output()
@@ -542,6 +560,7 @@ fn lock_fixture_expired_lock_does_not_block_commit() {
     let status_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status"])
         .current_dir(dir.path())
         .output()
@@ -560,6 +579,7 @@ fn lock_fixture_malformed_lock_file_fails_open() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock"])
         .current_dir(dir.path())
         .output()
@@ -583,6 +603,7 @@ fn lock_fixture_locking_twice_is_idempotent() {
         let out = Command::new(&binary)
             // Never let a test hit the network via the update check.
             .env("GITKIT_NO_UPDATE_CHECK", "1")
+            .env("HOME", dir.path())
             .args(["lock", "--reason", reason])
             .current_dir(dir.path())
             .output()
@@ -626,6 +647,7 @@ fn lock_fixture_preserves_existing_user_pre_commit_hook() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock"])
         .current_dir(dir.path())
         .output()
@@ -636,6 +658,7 @@ fn lock_fixture_preserves_existing_user_pre_commit_hook() {
     let unlock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["unlock"])
         .current_dir(dir.path())
         .output()
@@ -713,6 +736,7 @@ fn push_fixture_push_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--push", "--reason", "Agent session active"])
         .current_dir(dir.path())
         .output()
@@ -731,6 +755,7 @@ fn push_fixture_push_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
     let unlock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["unlock"])
         .current_dir(dir.path())
         .output()
@@ -750,6 +775,7 @@ fn push_fixture_expired_lock_does_not_block_push() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--push", "--timeout", "30m"])
         .current_dir(dir.path())
         .output()
@@ -774,6 +800,7 @@ fn push_fixture_expired_lock_does_not_block_push() {
     let status_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status"])
         .current_dir(dir.path())
         .output()
@@ -791,6 +818,7 @@ fn push_fixture_malformed_lock_file_fails_open() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--push"])
         .current_dir(dir.path())
         .output()
@@ -814,6 +842,7 @@ fn push_fixture_commit_lock_alone_does_not_block_push() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock"])
         .current_dir(dir.path())
         .output()
@@ -836,6 +865,7 @@ fn push_fixture_all_locks_both_commit_and_push() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--all", "--reason", "full lockdown"])
         .current_dir(dir.path())
         .output()
@@ -859,6 +889,7 @@ fn push_fixture_adding_push_lock_preserves_commit_lock_reason() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--reason", "original session"])
         .current_dir(dir.path())
         .output()
@@ -869,6 +900,7 @@ fn push_fixture_adding_push_lock_preserves_commit_lock_reason() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--push"])
         .current_dir(dir.path())
         .output()
@@ -905,6 +937,7 @@ fn push_fixture_preserves_existing_user_pre_push_hook() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--push"])
         .current_dir(dir.path())
         .output()
@@ -915,6 +948,7 @@ fn push_fixture_preserves_existing_user_pre_push_hook() {
     let unlock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["unlock"])
         .current_dir(dir.path())
         .output()
@@ -948,6 +982,7 @@ fn lock_status_json_exit_code_zero_when_unlocked() {
     let out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status", "--json"])
         .current_dir(dir.path())
         .output()
@@ -976,6 +1011,7 @@ fn lock_status_json_exit_code_nonzero_when_locked() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "--reason", "agent session"])
         .current_dir(dir.path())
         .output()
@@ -985,6 +1021,7 @@ fn lock_status_json_exit_code_nonzero_when_locked() {
     let out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status", "--json"])
         .current_dir(dir.path())
         .output()
@@ -1022,6 +1059,7 @@ fn lock_status_json_exit_code_zero_when_expired() {
     let out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status", "--json"])
         .current_dir(dir.path())
         .output()
@@ -1052,6 +1090,7 @@ fn lock_status_json_exit_code_zero_when_malformed() {
     let out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status", "--json"])
         .current_dir(dir.path())
         .output()
@@ -1074,6 +1113,7 @@ fn lock_status_json_works_from_a_subdirectory() {
     let lock_out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock"])
         .current_dir(dir.path())
         .output()
@@ -1086,6 +1126,7 @@ fn lock_status_json_works_from_a_subdirectory() {
     let out = Command::new(&binary)
         // Never let a test hit the network via the update check.
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["lock", "status", "--json"])
         .current_dir(&subdir)
         .output()
@@ -1148,6 +1189,7 @@ fn status_strict_exits_nonzero_when_a_hook_is_dormant() {
     let binary = gitkit_binary();
     let install_out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "no-secrets", "--yes", "--force"])
         .current_dir(dir.path())
         .output()
@@ -1167,6 +1209,7 @@ fn status_strict_exits_nonzero_when_a_hook_is_dormant() {
 
     let out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status", "--strict"])
         .current_dir(dir.path())
         .output()
@@ -1195,6 +1238,7 @@ fn status_strict_exits_zero_with_no_dormant_hooks() {
 
     let out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status", "--strict"])
         .current_dir(dir.path())
         .output()
@@ -1216,6 +1260,7 @@ fn status_repair_sets_executable_bit_and_strict_then_passes() {
 
     let install_out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "no-secrets", "--yes", "--force"])
         .current_dir(dir.path())
         .output()
@@ -1233,6 +1278,7 @@ fn status_repair_sets_executable_bit_and_strict_then_passes() {
 
     let repair_out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status", "--repair"])
         .current_dir(dir.path())
         .output()
@@ -1251,6 +1297,7 @@ fn status_repair_sets_executable_bit_and_strict_then_passes() {
 
     let strict_out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status", "--strict"])
         .current_dir(dir.path())
         .output()
@@ -1275,6 +1322,7 @@ fn no_invisibles_fixture_blocks_zero_width_space_then_accepts_clean_commit() {
 
     let install_out = Command::new(&binary)
         .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "no-invisibles", "--yes", "--force"])
         .current_dir(dir.path())
         .output()

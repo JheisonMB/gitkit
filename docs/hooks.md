@@ -180,3 +180,43 @@ opt-in.
 
 On Windows the executable bit doesn't exist, so a hook there is never
 reported `dormant`.
+
+## Machine-wide status
+
+`gitkit status` only looks at the current repository. If a hook goes dormant
+in a repo you aren't currently sitting in, nothing tells you — that's how a
+hook can silently stop running for months.
+
+`gitkit status --global` answers "which repositories on this machine has
+gitkit touched, and are they healthy?" in one screen:
+
+```bash
+gitkit status --global
+```
+
+Every time `hooks add`, `init`, `config`, `ignore`, `attributes` or
+`build apply` touches a repository, gitkit records its absolute path in
+`~/.gitkit/registry.toml` — alongside a timestamp and what was applied.
+That registry only ever supplies *where to look*. `--global` re-reads every
+hook's health straight from disk at query time, using the same
+active/dormant/modified/absent states as a local `gitkit status`; it never
+trusts the registry's own record of what was installed. Delete a hook by
+hand, or delete the whole repository, and `--global` reports exactly that —
+`absent` or `gone` — instead of repeating a stale claim.
+
+```bash
+gitkit status --global --prune   # also drop registry entries for repos that no longer exist
+```
+
+A bare `--global` never modifies anything; pruning is opt-in.
+
+Repositories configured before the registry existed aren't in it yet.
+Adopt them with an explicit scan:
+
+```bash
+gitkit status --scan ~/Projects   # find repos with gitkit hooks under a directory and register them
+```
+
+`--scan` never runs implicitly and never defaults to `$HOME` — you always
+name the directory. It skips noisy directories (`node_modules`, `target`,
+`.cargo`, ...) and never follows symlinks out of the directory you gave it.

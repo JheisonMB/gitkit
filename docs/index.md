@@ -23,7 +23,8 @@ project with one command.
 - **Guided repo setup** — `gitkit` (no arguments) walks you through
   everything, showing what is already configured.
 - **Status overview** — `gitkit status` shows hooks, ignore patterns,
-  attributes and config at a glance.
+  attributes and config at a glance; `gitkit status --global` shows every
+  repository gitkit has touched, machine-wide.
 - **Clone and bootstrap** — `gitkit clone <url>` clones and drops straight
   into the wizard.
 - **Hook management** — built-in hooks (conventional commits, secret

@@ -60,6 +60,7 @@ pub fn run(cmd: AttributesCommand) -> Result<()> {
     }
 
     fs::write(&path, PRESET_LF).context("Failed to write .gitattributes")?;
+    crate::registry::record_best_effort(&root, &["gitattributes:line-endings".to_string()]);
     println!("Applied line endings preset to .gitattributes.");
     Ok(())
 }
@@ -87,6 +88,11 @@ pub(crate) fn apply_presets_at(labels: &[&str], root: &std::path::Path) -> Resul
         }
     }
     fs::write(&path, content).context("Failed to write .gitattributes")?;
+    let items: Vec<String> = labels
+        .iter()
+        .map(|l| format!("gitattributes:{l}"))
+        .collect();
+    crate::registry::record_best_effort(root, &items);
     Ok(())
 }
 
