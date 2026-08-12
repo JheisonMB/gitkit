@@ -42,6 +42,8 @@ Set up a git repo the way you actually work — one guided flow for hooks, `.git
 - **🧩 Ignore and attribute presets** — Browse built-in and gitignore.io templates, then apply line-ending or binary presets.
 - **⚙️ Curated git config** — Apply practical presets with `--global` or `--local` scope, with idempotency detection.
 - **💾 Save & reuse builds** — Save configurations and apply them to any project with one command.
+- **🔒 Repository locks** — Block commits and pushes during agent sessions with `gitkit lock` / `gitkit unlock` — useful when autonomous agents are editing the repo.
+- **⬆️ Version check & self-update** — Automatic check for new releases with optional auto-update; disable with `GITKIT_NO_UPDATE_CHECK`.
 - **📦 Single binary** — No Node.js, no Python, no extra runtime.
 
 ---
