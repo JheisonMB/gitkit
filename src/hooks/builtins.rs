@@ -36,6 +36,12 @@ pub(crate) const ALL: &[Builtin] = &[
         description: "Rejects added lines carrying invisible Unicode characters",
         script: NO_INVISIBLES,
     },
+    Builtin {
+        name: "no-body",
+        hook: "commit-msg",
+        description: "Rejects a commit message that has a body",
+        script: NO_BODY,
+    },
 ];
 
 pub(crate) fn get(name: &str) -> Option<&'static Builtin> {
@@ -43,12 +49,16 @@ pub(crate) fn get(name: &str) -> Option<&'static Builtin> {
 }
 
 const CONVENTIONAL_COMMITS: &str = r#"#!/bin/sh
-commit_msg=$(cat "$1")
-pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,}'
-if ! echo "$commit_msg" | grep -qE "$pattern"; then
+# Validates only the first line (the subject). grep matches line-by-line, so
+# without this the whole message would pass if ANY line looked conventional,
+# not just the first.
+subject=$(sed -n '1p' "$1")
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,}'
+if ! echo "$subject" | grep -qE "$pattern"; then
   echo "ERROR: Commit message does not follow Conventional Commits format."
   echo "Expected: <type>(<scope>): <description>"
   echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+  echo "Breaking change: <type>(<scope>)!: <description>"
   exit 1
 fi
 "#;
@@ -116,6 +126,66 @@ const NO_INVISIBLES: &str = r#"#!/bin/sh
 exec gitkit hooks scan-invisibles
 "#;
 
+const NO_BODY: &str = r#"#!/bin/sh
+# Rejects a commit message with a body. A conforming message is one line,
+# with any number of trailing newlines. The only body this hook allows is a
+# blank line followed by a BREAKING CHANGE:/BREAKING-CHANGE: footer (case
+# matters, per the Conventional Commits spec) with nothing before or after
+# it besides the footer's own wrapped continuation lines. Revert, merge,
+# fixup! and squash! commits are auto-generated, not hand-authored, and are
+# always accepted.
+msg_file="$1"
+subject=$(sed -n '1p' "$msg_file")
+
+reject() {
+  echo "ERROR: commit message has a body; this hook only allows a single-line subject."
+  echo ""
+  echo "A bulleted restatement of the diff doesn't belong here -- 'git show' already tells that story better. If the change needs explaining, put the why in the pull request description, not the commit body."
+  echo ""
+  echo "The only exception is a breaking change, and either form is fine:"
+  echo "  1) mark it in the subject:  feat(api)!: drop the v1 endpoint"
+  echo "  2) or state it in a footer, and nothing else in the body:"
+  echo "       BREAKING CHANGE: <what breaks, and what to do about it>"
+  echo "     (a blank line before the footer; BREAKING-CHANGE: also works)"
+  exit 1
+}
+
+case "$subject" in
+  'Revert "'*) exit 0 ;;
+  'Merge '*) exit 0 ;;
+  'fixup! '*) exit 0 ;;
+  'squash! '*) exit 0 ;;
+esac
+
+msg=$(cat "$msg_file")
+total=$(printf '%s\n' "$msg" | wc -l)
+if [ "$total" -le 1 ]; then
+  exit 0
+fi
+
+second_line=$(printf '%s\n' "$msg" | sed -n '2p')
+if [ -n "$second_line" ]; then
+  reject
+fi
+
+third_line=$(printf '%s\n' "$msg" | sed -n '3p')
+if ! printf '%s\n' "$third_line" | grep -qE '^(BREAKING CHANGE|BREAKING-CHANGE): .+'; then
+  reject
+fi
+
+seen_blank=0
+i=4
+while [ "$i" -le "$total" ]; do
+  line=$(printf '%s\n' "$msg" | sed -n "${i}p")
+  if [ -z "$line" ]; then
+    seen_blank=1
+  elif [ "$seen_blank" -eq 1 ]; then
+    reject
+  fi
+  i=$((i + 1))
+done
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +210,189 @@ mod tests {
         let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
         combined.push_str(&String::from_utf8_lossy(&output.stderr));
         (output.status.success(), combined)
+    }
+
+    /// Runs a commit-msg builtin script exactly as git would: `sh <script>
+    /// <commit-msg-file>`. Returns (accepted, combined stdout+stderr).
+    fn run_commit_msg_script(script: &str, message: &str) -> (bool, String) {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(message.as_bytes()).unwrap();
+        file.flush().unwrap();
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .arg("script")
+            .arg(file.path())
+            .output()
+            .expect("failed to run commit-msg script");
+
+        let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
+        combined.push_str(&String::from_utf8_lossy(&output.stderr));
+        (output.status.success(), combined)
+    }
+
+    fn run_conventional_commits(message: &str) -> (bool, String) {
+        run_commit_msg_script(CONVENTIONAL_COMMITS, message)
+    }
+
+    fn run_no_body(message: &str) -> (bool, String) {
+        run_commit_msg_script(NO_BODY, message)
+    }
+
+    #[test]
+    fn conventional_commits_accepts_bang_breaking_change_no_scope() {
+        let (accepted, output) = run_conventional_commits("feat!: drop v1\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn conventional_commits_accepts_bang_breaking_change_with_scope() {
+        let (accepted, output) = run_conventional_commits("feat(api)!: drop v1\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn conventional_commits_rejects_conventional_subject_only_on_a_later_line() {
+        // Regression test: grep matches line-by-line, so without anchoring to
+        // the first line, a "wip" subject followed by a conventional-looking
+        // third line used to pass.
+        let (accepted, output) = run_conventional_commits("wip\n\nfix: something\n");
+        assert!(
+            !accepted,
+            "a conventional-looking line beyond the subject must not pass: {output}"
+        );
+    }
+
+    #[test]
+    fn conventional_commits_still_accepts_plain_conventional_subject() {
+        let (accepted, output) = run_conventional_commits("feat(x): add thing\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn conventional_commits_still_rejects_non_conventional_subject() {
+        let (accepted, _) = run_conventional_commits("just a message\n");
+        assert!(!accepted);
+    }
+
+    #[test]
+    fn no_body_is_registered_as_commit_msg_builtin() {
+        let builtin = get("no-body").unwrap();
+        assert_eq!(builtin.hook, "commit-msg");
+        assert!(!builtin.description.is_empty());
+        assert!(builtin.script.starts_with("#!/bin/sh"));
+    }
+
+    #[test]
+    fn no_body_accepts_one_line_message() {
+        let (accepted, output) = run_no_body("fix: correct the slug\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_rejects_bulleted_diff_inventory_and_names_both_breaking_change_forms() {
+        // Verbatim fixture from the WHY section of the spec: a correct
+        // conventional subject followed by a bulleted restatement of the diff.
+        let message = "feat(spell): add texforge spell CLI for managing personal dictionary\n\n\
+- Added spell add/list/remove subcommands\n\
+- Added --global flag\n\
+- Updated load_project_whitelist to union both scopes\n\
+- Added 8 tests\n\
+- Updated docs/cli-reference.md\n";
+        let (accepted, output) = run_no_body(message);
+        assert!(!accepted, "a bulleted diff inventory must be rejected");
+        assert!(
+            output.contains("!:"),
+            "rejection must name the `!` breaking-change form: {output}"
+        );
+        assert!(
+            output.contains("BREAKING CHANGE:"),
+            "rejection must name the footer breaking-change form: {output}"
+        );
+    }
+
+    #[test]
+    fn no_body_accepts_breaking_change_footer() {
+        let (accepted, output) =
+            run_no_body("feat(api)!: drop v1\n\nBREAKING CHANGE: the v1 endpoint is gone\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_hyphenated_breaking_change_footer() {
+        let (accepted, output) =
+            run_no_body("feat(api)!: drop v1\n\nBREAKING-CHANGE: the v1 endpoint is gone\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_breaking_change_footer_wrapped_onto_continuation_line() {
+        let (accepted, output) = run_no_body(
+            "feat(api)!: drop v1\n\nBREAKING CHANGE: this is a long description that\n  continues on the next line\n",
+        );
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_rejects_lowercase_breaking_change_footer() {
+        let (accepted, _) =
+            run_no_body("feat(api)!: drop v1\n\nbreaking change: the v1 endpoint is gone\n");
+        assert!(
+            !accepted,
+            "lowercase breaking change is not a footer per the spec"
+        );
+    }
+
+    #[test]
+    fn no_body_rejects_breaking_change_footer_followed_by_bullet_list() {
+        let message = "feat(api)!: drop v1\n\nBREAKING CHANGE: the v1 endpoint is gone\n\n- old clients must migrate\n- see migration guide\n";
+        let (accepted, _) = run_no_body(message);
+        assert!(
+            !accepted,
+            "content after the footer's blank-line separator must be rejected"
+        );
+    }
+
+    #[test]
+    fn no_body_rejects_paragraph_followed_by_breaking_change_footer() {
+        let message = "feat(api)!: drop v1\n\nThis is some explanation paragraph.\n\nBREAKING CHANGE: the v1 endpoint is gone\n";
+        let (accepted, _) = run_no_body(message);
+        assert!(
+            !accepted,
+            "a paragraph before the footer disqualifies the exception"
+        );
+    }
+
+    #[test]
+    fn no_body_accepts_revert_commit() {
+        let (accepted, output) =
+            run_no_body("Revert \"fix: something\"\n\nThis reverts commit abc123.\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_merge_commit() {
+        let (accepted, output) = run_no_body("Merge branch 'develop'\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_fixup_commit() {
+        let (accepted, output) = run_no_body("fixup! fix: something\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_squash_commit() {
+        let (accepted, output) = run_no_body("squash! fix: something\n");
+        assert!(accepted, "expected acceptance: {output}");
+    }
+
+    #[test]
+    fn no_body_accepts_subject_with_trailing_newlines() {
+        let (accepted, output) = run_no_body("fix: correct the slug\n\n\n");
+        assert!(accepted, "expected acceptance: {output}");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: Built-in hooks (conventional commits, AI trailer rejection, secret detection, branch naming, invisible Unicode detection) and custom shell commands.
+description: Built-in hooks (conventional commits, no-body messages, AI trailer rejection, secret detection, branch naming, invisible Unicode detection) and custom shell commands.
 order: 4
 ---
 
@@ -13,6 +13,7 @@ Built-ins are embedded in the binary — no network required.
 | Name | Hook | Description |
 |---|---|---|
 | `conventional-commits` | `commit-msg` | Validates Conventional Commits format |
+| `no-body` | `commit-msg` | Rejects a commit message that has a body |
 | `no-trailers` | `commit-msg` | Rejects commit messages carrying AI attribution trailers |
 | `no-secrets` | `pre-commit` | Detects common secret patterns in staged changes |
 | `branch-naming` | `pre-commit` | Validates branch name matches convention |
@@ -22,6 +23,38 @@ Built-ins are embedded in the binary — no network required.
 gitkit hooks list --available   # see all built-ins with descriptions
 gitkit hooks add no-secrets     # install one (hook type inferred)
 ```
+
+### `conventional-commits`
+
+Validates that the **subject line** (the first line only — a conventional-looking
+line further down the message doesn't count) matches
+`<type>(<scope>): <description>`, where `<type>` is one of `feat`, `fix`,
+`docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` or
+`revert`, and `<scope>` is optional. A breaking change can be marked with a
+`!` before the colon, with or without a scope: `feat!: drop the v1 endpoint`
+or `feat(api)!: drop the v1 endpoint`.
+
+### `no-body`
+
+Rejects a commit message that has a body. A conforming message is one line,
+with any number of trailing newlines. The subject line already says what
+changed; a bulleted restatement of the diff adds nothing `git show` can't
+show better, and it pushes the one thing prose is good at — *why* — out of
+the message. That narrative belongs in the pull request description, not
+the commit body.
+
+The only body this hook accepts is a **breaking-change footer**: a blank
+line followed by `BREAKING CHANGE:` or `BREAKING-CHANGE:` (uppercase, per
+the Conventional Commits spec — a lowercase `breaking change:` is not
+recognized) and nothing else. The footer's own description may wrap onto
+continuation lines, but a paragraph before it or a bullet list after it is
+rejected — the exception is for stating a breaking change, not a loophole
+for arbitrary bodies. For a breaking change that fits in the subject, use
+`conventional-commits`'s `!` form instead and skip the body entirely.
+
+Revert (`Revert "..."`), merge (`Merge branch '...'`), `fixup!` and
+`squash!` commit messages are auto-generated, not hand-authored, and are
+always accepted regardless of body.
 
 ### `no-trailers`
 
