@@ -28,20 +28,21 @@ project with one command.
   into the wizard.
 - **Hook management** — built-in hooks (conventional commits, secret
   detection, branch naming) or your own shell command.
-- **Agent lock** — block commits locally and reversibly for the
-  duration of an agent session with `gitkit lock`.
+- **Agent lock** — block commits and/or pushes locally and reversibly for
+  the duration of an agent session with `gitkit lock`.
 - **Ignore & attribute presets** — all gitignore.io templates plus
   built-ins, line-ending and binary presets.
 - **Curated git config** — practical presets with `--global`/`--local`
   scope and idempotency detection.
 - **Builds** — save a configuration once, apply it everywhere.
+- **Self-update** — gitkit checks GitHub for newer releases and updates itself automatically.
 
 ## How the documentation is organized
 
-- [Installation](installation.md) — install, update and uninstall.
+- [Installation](installation.md) — install, update (including automatic self-updates), and uninstall.
 - [Quick Start](quickstart.md) — the wizard and the one-liner workflow.
 - [Hooks](hooks.md) — built-in and custom hooks.
-- [Lock](lock.md) — block commits for an agent session, and its limits.
+- [Lock](lock.md) — block commits and/or pushes for an agent session, and its limits.
 - [Ignore & Attributes](ignore-and-attributes.md) — `.gitignore` and `.gitattributes`.
 - [Config Presets](config-presets.md) — curated git config, scopes, idempotency.
 - [Builds](builds.md) — save and reuse configurations.
