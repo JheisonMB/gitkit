@@ -5,6 +5,7 @@ edition = "2021"
 description = "Standalone CLI for configuring git repos — hooks, .gitignore, and .gitattributes"
 license = "MIT"
 repository = "https://github.com/UniverLab/gitkit"
+homepage = "https://univerlab.org/gitkit"
 keywords = ["git", "hooks", "cli", "gitignore", "gitattributes"]
 categories = ["command-line-utilities", "development-tools"]
 

@@ -19,6 +19,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2E8B57?style=for-the-badge" alt="License"/></a>
 </p>
 
+<p align="center">
+  <strong><a href="https://univerlab.org/gitkit">Visit the website</a></strong>
+</p>
+
 Set up a git repo the way you actually work — one guided flow for hooks, `.gitignore`, `.gitattributes`, and git config. One binary, no Node.js, no Python, no runtime dependencies.
 
 ---
