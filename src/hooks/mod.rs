@@ -5,6 +5,7 @@ use std::{fs, path::Path};
 use crate::utils::{confirm, find_repo_root};
 
 pub(crate) mod builtins;
+mod no_invisibles;
 
 #[derive(Subcommand)]
 pub enum HooksCommand {
@@ -15,6 +16,7 @@ pub enum HooksCommand {
     ///   gitkit hooks add no-trailers
     ///   gitkit hooks add no-secrets
     ///   gitkit hooks add branch-naming
+    ///   gitkit hooks add no-invisibles
     ///
     /// Custom command:
     ///   gitkit hooks add pre-push "cargo test"
@@ -45,6 +47,10 @@ pub enum HooksCommand {
     },
     /// Show the content of an installed hook
     Show { hook: String },
+    /// Internal: scan staged changes for invisible Unicode. Execed by the
+    /// `no-invisibles` pre-commit hook; not meant to be run directly.
+    #[command(hide = true)]
+    ScanInvisibles,
 }
 
 pub fn run(cmd: HooksCommand) -> Result<()> {
@@ -59,6 +65,7 @@ pub fn run(cmd: HooksCommand) -> Result<()> {
         HooksCommand::List { available } => list(available),
         HooksCommand::Remove { hook, yes, dry_run } => remove(&hook, yes, dry_run),
         HooksCommand::Show { hook } => show(&hook),
+        HooksCommand::ScanInvisibles => no_invisibles::run(),
     }
 }
 

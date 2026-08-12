@@ -30,6 +30,12 @@ pub(crate) const ALL: &[Builtin] = &[
         description: "Validates branch name matches convention",
         script: BRANCH_NAMING,
     },
+    Builtin {
+        name: "no-invisibles",
+        hook: "pre-commit",
+        description: "Rejects added lines carrying invisible Unicode characters",
+        script: NO_INVISIBLES,
+    },
 ];
 
 pub(crate) fn get(name: &str) -> Option<&'static Builtin> {
@@ -93,6 +99,21 @@ if ! echo "$branch" | grep -qE "$pattern"; then
   echo "Expected pattern: main|master|develop|release/*|hotfix/*|feat/*|feature/*|fix/*|chore/*"
   exit 1
 fi
+"#;
+
+// Unlike the other builtins above, this one execs back into gitkit rather
+// than doing its own detection in `sh`. Finding invisible characters by file,
+// line, column and codepoint needs real Unicode-aware text handling (decoding
+// UTF-8, counting scalar values, distinguishing a leading BOM from one added
+// mid-file) that POSIX sh's text tools cannot do reliably or portably. The
+// actual scan lives in `no_invisibles.rs`, is pure Rust std library, and is
+// unit-tested directly there.
+const NO_INVISIBLES: &str = r#"#!/bin/sh
+# Rejects added lines carrying invisible Unicode: zero-width characters,
+# bidi controls (also the "Trojan Source" vector) and Unicode tag
+# characters. Only lines this commit adds are scanned, not the whole file —
+# see docs/hooks.md. Delegates to gitkit itself for the actual scan.
+exec gitkit hooks scan-invisibles
 "#;
 
 #[cfg(test)]
@@ -240,6 +261,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n";
         let (accepted, output) = run_no_trailers(message);
         assert!(!accepted);
         assert!(output.contains("Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"));
+    }
+
+    #[test]
+    fn no_invisibles_is_registered_as_pre_commit_builtin() {
+        let builtin = get("no-invisibles").unwrap();
+        assert_eq!(builtin.hook, "pre-commit");
+        assert!(!builtin.description.is_empty());
+        assert!(!builtin.description.to_lowercase().contains("watermark"));
+        assert!(builtin.script.starts_with("#!/bin/sh"));
+        assert!(builtin.script.contains("gitkit hooks scan-invisibles"));
     }
 
     #[test]

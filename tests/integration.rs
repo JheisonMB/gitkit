@@ -1095,3 +1095,87 @@ fn lock_status_json_works_from_a_subdirectory() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("\"active\":true"), "stdout was: {stdout}");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// no-invisibles integration tests (real git repo, real git commit, hook
+// script execs back into the built `gitkit` binary — unlike the other
+// builtins, which are pure `sh`)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Prepends the directory holding the built `gitkit` binary to `PATH`, so
+/// the installed `no-invisibles` hook's `exec gitkit hooks scan-invisibles`
+/// can find it when git runs the hook as a subprocess.
+fn path_with_gitkit_dir(binary: &std::path::Path) -> std::ffi::OsString {
+    let bin_dir = binary.parent().unwrap();
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![bin_dir.to_path_buf()];
+    paths.extend(std::env::split_paths(&existing));
+    std::env::join_paths(paths).unwrap()
+}
+
+fn git_commit_with_path(
+    dir: &std::path::Path,
+    msg: &str,
+    path: &std::ffi::OsStr,
+) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["commit", "-m", msg])
+        .env("PATH", path)
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git commit");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+#[test]
+fn no_invisibles_fixture_blocks_zero_width_space_then_accepts_clean_commit() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+    let path = path_with_gitkit_dir(&binary);
+
+    // Baseline commit (README.md staged by init_git_repo) succeeds with no
+    // hook installed yet.
+    let (ok, _) = git_commit_with_path(dir.path(), "initial commit", &path);
+    assert!(ok, "baseline commit should succeed");
+
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .args(["hooks", "add", "no-invisibles", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add no-invisibles");
+    assert!(
+        install_out.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&install_out.stderr)
+    );
+
+    // Stage a line carrying a zero-width space: the commit must be refused,
+    // naming file, line, column and codepoint.
+    std::fs::write(dir.path().join("README.md"), "hello\nhidden\u{200B}space\n").unwrap();
+    Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+
+    let (ok, msg) = git_commit_with_path(dir.path(), "smuggled watermark", &path);
+    assert!(!ok, "commit carrying a ZWSP should be refused: {msg}");
+    assert!(msg.contains("README.md:2:7"), "message was: {msg}");
+    assert!(msg.contains("U+200B"), "message was: {msg}");
+    assert!(msg.contains("ZERO WIDTH SPACE"), "message was: {msg}");
+
+    // Remove the character: the commit now succeeds.
+    std::fs::write(dir.path().join("README.md"), "hello\nclean space\n").unwrap();
+    Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+
+    let (ok, msg) = git_commit_with_path(dir.path(), "cleaned up", &path);
+    assert!(ok, "clean commit should pass silently: {msg}");
+}
