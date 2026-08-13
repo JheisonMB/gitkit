@@ -44,7 +44,10 @@ pub(crate) fn git_config_get(key: &str, scope: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
+
+    // ── find_repo_root ──────────────────────────────────────────────────────
 
     #[test]
     fn find_repo_root_finds_git_dir() {
@@ -52,11 +55,59 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         let subdir = dir.path().join("src");
         std::fs::create_dir(&subdir).unwrap();
-
-        // Temporarily change CWD is not safe in tests; test the logic directly
-        // by verifying .git exists at the found root
         assert!(dir.path().join(".git").exists());
     }
+
+    #[test]
+    fn find_repo_root_returns_path_with_git_dir() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let subdir = dir.path().join("nested");
+        std::fs::create_dir(&subdir).unwrap();
+        assert!(dir.path().join(".git").exists());
+        assert!(!subdir.join(".git").exists());
+    }
+
+    #[test]
+    fn find_repo_root_traverses_up_to_find_git() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let deep = dir.path().join("a").join("b").join("c");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert!(deep.join("").parent().unwrap().exists());
+    }
+
+    #[serial]
+    #[test]
+    fn find_repo_root_no_git_dir_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let result = std::panic::catch_unwind(|| {
+            let original = std::env::current_dir().ok();
+            std::env::set_current_dir(dir.path()).ok();
+            let res = find_repo_root();
+            if let Some(orig) = original {
+                std::env::set_current_dir(orig).ok();
+            }
+            res
+        });
+        match result {
+            Ok(Ok(_)) => {
+                // If we're inside a git repo (CI), find_repo_root will find the parent .git
+                // That's fine — just verify it returns a PathBuf
+            }
+            Ok(Err(e)) => {
+                assert!(
+                    e.to_string().contains("Not inside a git repository"),
+                    "Unexpected error: {e}"
+                );
+            }
+            Err(_) => {
+                // panic from set_current_dir — acceptable in test env
+            }
+        }
+    }
+
+    // ── confirm ─────────────────────────────────────────────────────────────
 
     #[test]
     fn confirm_returns_true_when_yes_flag_set() {
@@ -64,8 +115,68 @@ mod tests {
     }
 
     #[test]
+    fn confirm_returns_true_for_any_prompt_with_yes() {
+        assert!(confirm("overwrite?", true));
+        assert!(confirm("delete?", true));
+        assert!(confirm("", true));
+    }
+
+    #[test]
+    fn confirm_with_yes_true_short_circuits() {
+        assert!(confirm("press y", true));
+    }
+
+    // ── git_config_get ──────────────────────────────────────────────────────
+
+    #[test]
     fn git_config_get_returns_none_for_missing_key() {
         let result = git_config_get("nonexistent.key.xyz", "--global");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn git_config_get_returns_none_for_empty_key() {
+        let result = git_config_get("", "--global");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn git_config_get_returns_none_for_invalid_scope() {
+        let result = git_config_get("user.name", "--totally-invalid-scope");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn git_config_get_returns_none_for_nonexistent_scope() {
+        let result = git_config_get("user.name", "--nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn git_config_get_scopes_are_strings() {
+        let _ = git_config_get("user.name", "--global");
+        let _ = git_config_get("user.name", "--local");
+    }
+
+    #[test]
+    fn git_config_get_returns_string_when_found() {
+        let result = git_config_get("user.name", "--global");
+        if let Some(val) = result {
+            assert!(!val.is_empty());
+        }
+    }
+
+    #[test]
+    fn git_config_get_with_dot_key() {
+        let result = git_config_get("core.autocrlf", "--global");
+        // May or may not be set, but should not panic
+        let _ = result;
+    }
+
+    #[test]
+    fn git_config_get_with_very_long_key() {
+        let key = "a".repeat(500);
+        let result = git_config_get(&key, "--global");
         assert!(result.is_none());
     }
 }

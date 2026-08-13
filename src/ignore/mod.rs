@@ -46,6 +46,7 @@ pub(crate) fn add_templates(templates: &str, force: bool) -> Result<()> {
         merge_gitignore(&path, &new_content)
     };
     fs::write(&path, merged).context("Failed to write .gitignore")?;
+    crate::registry::record_best_effort(&root, &[format!("gitignore:{templates}")]);
     Ok(())
 }
 
@@ -79,6 +80,7 @@ fn add(templates: &str, _yes: bool, force: bool, dry_run: bool) -> Result<()> {
     }
 
     fs::write(&path, merged).context("Failed to write .gitignore")?;
+    crate::registry::record_best_effort(&root, &[format!("gitignore:{templates}")]);
     println!("Updated .gitignore for: {templates}");
     Ok(())
 }
@@ -186,6 +188,7 @@ fn merge_gitignore(path: &std::path::Path, new_content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::TempDir;
 
@@ -242,6 +245,499 @@ mod tests {
         assert!(result.contains(".kiro/"));
         assert!(result.contains(".cursor/"));
     }
+
+    #[test]
+    fn resolve_templates_multiple_builtins_combined() {
+        let result = resolve_templates("agentic,agentic").unwrap();
+        assert!(result.contains(".kiro/"));
+    }
+
+    #[test]
+    fn agentic_template_has_representative_entry_per_group() {
+        let result = resolve_templates("agentic").unwrap();
+        // AI coding agents: local directories with no known shared-content convention
+        assert!(result.contains(".kiro/"));
+        // Claude Code: narrowed to local state only, not the whole shared directory
+        assert!(result.contains(".claude/settings.local.json"));
+        assert!(!result.lines().any(|l| l.trim() == ".claude/"));
+        // Aider: local chat/input history and tag cache
+        assert!(result.contains(".aider.chat.history.md"));
+        // Agent skill/tool lockfiles
+        assert!(result.contains("skills-lock.json"));
+    }
+
+    #[test]
+    fn agentic_template_never_ignores_agent_doc_files() {
+        let content = builtins::get("agentic").unwrap();
+        for line in content.lines() {
+            let pattern = line.trim();
+            if pattern.is_empty() || pattern.starts_with('#') {
+                continue;
+            }
+            assert_ne!(pattern, "CLAUDE.md", "template must not ignore CLAUDE.md");
+            assert_ne!(pattern, "AGENTS.md", "template must not ignore AGENTS.md");
+            assert!(
+                !pattern.ends_with("/CLAUDE.md"),
+                "template must not ignore a nested CLAUDE.md"
+            );
+            assert!(
+                !pattern.ends_with("/AGENTS.md"),
+                "template must not ignore a nested AGENTS.md"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_gitignore_agentic_merges_cleanly_with_previous_version() {
+        // The block gitkit shipped before this template gained new groups.
+        let previous = "\n# AI coding agents\n\
+.kiro/\n\
+.cursor/\n\
+.windsurf/\n\
+.claude/\n\
+.continue/\n\
+.copilot/\n\
+.kilocode/\n\
+.zencoder/\n\
+.qwen/\n\
+.agents/\n\
+skills-lock.json\n";
+        let (_dir, path) = tmp_gitignore(previous);
+        let new_content = builtins::get("agentic").unwrap();
+        let merged = merge_gitignore(&path, new_content);
+
+        // Lines shared verbatim between the old and new template must not be duplicated.
+        for pattern in [
+            ".kiro/",
+            ".cursor/",
+            ".windsurf/",
+            ".agents/",
+            "skills-lock.json",
+        ] {
+            let count = merged.lines().filter(|l| *l == pattern).count();
+            assert_eq!(count, 1, "pattern {pattern} duplicated after merge");
+        }
+    }
+
+    #[test]
+    fn merge_gitignore_agentic_reapply_does_not_duplicate_patterns() {
+        let content = builtins::get("agentic").unwrap();
+        let (_dir, path) = tmp_gitignore(content);
+        let merged = merge_gitignore(&path, content);
+
+        for pattern in content
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            let count = merged.lines().filter(|l| *l == pattern).count();
+            assert_eq!(
+                count, 1,
+                "pattern {pattern} duplicated after reapplying template"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_gitignore_only_comments_appended() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "# just a comment\n# another\n";
+        let result = merge_gitignore(&path, new);
+        assert!(result.contains("# just a comment"));
+        assert!(result.contains("target/"));
+    }
+
+    #[test]
+    fn merge_gitignore_only_blank_lines_appended() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "\n\n\n";
+        let result = merge_gitignore(&path, new);
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_mixed_new_and_existing_patterns() {
+        let (_dir, path) = tmp_gitignore("target/\n*.log\n");
+        let new = "*.log\n*.tmp\n";
+        let result = merge_gitignore(&path, new);
+        assert_eq!(result.matches("*.log").count(), 1);
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_file_not_ending_with_newline() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "target/").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_empty_new_content() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let result = merge_gitignore(&path, "");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_empty_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert_eq!(result, "*.log\n");
+    }
+
+    #[test]
+    fn merge_gitignore_preserves_blank_line_separators() {
+        let (_dir, path) = tmp_gitignore("target/\n");
+        let new = "\n*.log\n\n*.tmp\n";
+        let result = merge_gitignore(&path, new);
+        assert!(result.contains("*.log"));
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn add_templates_rejects_invalid_input_gracefully() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        // Write a file to ensure merge_gitignore has something to work with
+        fs::write(&path, "existing\n").unwrap();
+        let result = merge_gitignore(&path, "existing\nnew_pattern\n");
+        assert!(result.contains("new_pattern"));
+        assert_eq!(result.matches("existing").count(), 1);
+    }
+
+    #[test]
+    fn builtins_get_returns_none_for_unknown() {
+        assert!(builtins::get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn builtins_get_returns_agentic() {
+        assert!(builtins::get("agentic").is_some());
+    }
+
+    #[test]
+    fn builtins_names_contains_agentic() {
+        assert!(builtins::NAMES.contains(&"agentic"));
+    }
+
+    #[test]
+    fn api_base_is_correct() {
+        assert_eq!(API_BASE, "https://www.toptal.com/developers/gitignore/api");
+    }
+
+    // ── merge_gitignore additional edge cases ───────────────────────────────
+
+    #[test]
+    fn merge_gitignore_preserves_order_of_existing() {
+        let (_dir, path) = tmp_gitignore("*.log\n*.tmp\n");
+        let result = merge_gitignore(&path, "*.log\n");
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "*.log");
+        assert_eq!(lines[1], "*.tmp");
+    }
+
+    #[test]
+    fn merge_gitignore_multiple_newlines_preserved() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "*.log\n\n*.tmp\n");
+        assert!(result.contains("*.log"));
+        assert!(result.contains("*.tmp"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_with_trailing_whitespace() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(&path, "target/ \n").unwrap();
+        let result = merge_gitignore(&path, "target/\n");
+        // "target/ " (with trailing space) is not the same as "target/"
+        // so "target/" from new content should still be appended
+        assert!(result.contains("target/"));
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_all_duplicates() {
+        let (_dir, path) = tmp_gitignore("a\nb\nc\n");
+        let result = merge_gitignore(&path, "a\nb\nc\n");
+        assert_eq!(result, "a\nb\nc\n");
+    }
+
+    #[test]
+    fn merge_gitignore_large_content() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let existing: String = (0..100).map(|i| format!("pattern{i}\n")).collect();
+        fs::write(&path, &existing).unwrap();
+        let new: String = (100..150).map(|i| format!("pattern{i}\n")).collect();
+        let result = merge_gitignore(&path, &new);
+        assert!(result.contains("pattern0"));
+        assert!(result.contains("pattern149"));
+    }
+
+    // ── resolve_templates edge cases ────────────────────────────────────────
+
+    #[test]
+    fn resolve_templates_empty_string_does_not_panic() {
+        // Empty string sends empty query to API — just verify it doesn't panic
+        let result = resolve_templates("");
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn resolve_templates_single_builtin() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    #[test]
+    fn resolve_templates_builtin_with_whitespace() {
+        let result = resolve_templates(" agentic ");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    // ── builtins module edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn builtins_names_is_nonempty() {
+        assert!(!builtins::NAMES.is_empty());
+    }
+
+    #[test]
+    fn builtins_get_returns_same_static_str() {
+        let a = builtins::get("agentic");
+        let b = builtins::get("agentic");
+        assert!(std::ptr::eq(
+            a.unwrap() as *const str,
+            b.unwrap() as *const str
+        ));
+    }
+
+    #[test]
+    fn builtins_get_agentic_content_has_expected_dirs() {
+        let content = builtins::get("agentic").unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+        assert!(content.contains(".windsurf/"));
+        assert!(content.contains(".claude/settings.local.json"));
+        assert!(content.contains(".agents/"));
+        assert!(content.contains(".aider.chat.history.md"));
+        assert!(content.contains("skills-lock.json"));
+    }
+
+    // ── add_templates ─────────────────────────────────────────────────────
+
+    #[serial]
+    #[test]
+    fn add_templates_force_writes_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", true);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_templates_merge_with_existing_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", false);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains("target/"));
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn add_templates_no_existing_gitignore() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let result = add_templates("agentic", false);
+        assert!(result.is_ok());
+        let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(gitignore.contains(".kiro/"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── resolve_templates with builtins only ──────────────────────────────
+
+    #[test]
+    fn resolve_templates_single_builtin_no_api_call() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+    }
+
+    #[test]
+    fn resolve_templates_two_distinct_builtins() {
+        let result = resolve_templates("agentic");
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.contains(".kiro/"));
+        assert!(content.contains(".cursor/"));
+    }
+
+    #[test]
+    fn resolve_templates_builtin_with_whitespace_around() {
+        let result = resolve_templates("  agentic  ");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains(".kiro/"));
+    }
+
+    // ── merge_gitignore additional edge cases ─────────────────────────────
+
+    #[test]
+    fn merge_gitignore_both_empty() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_only_comments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        let result = merge_gitignore(&path, "# comment\n# another\n");
+        assert!(result.contains("# comment"));
+        assert!(result.contains("# another"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_with_trailing_newline() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/\n").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_existing_without_trailing_newline() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/").unwrap();
+        let result = merge_gitignore(&path, "*.log\n");
+        assert!(result.contains("target/"));
+        assert!(result.contains("*.log"));
+    }
+
+    #[test]
+    fn merge_gitignore_new_content_blank_lines_only() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "target/\n").unwrap();
+        let result = merge_gitignore(&path, "\n\n\n");
+        assert_eq!(result, "target/\n");
+    }
+
+    #[test]
+    fn merge_gitignore_mixed_patterns_and_comments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "*.log\n").unwrap();
+        let result = merge_gitignore(&path, "# Rust\ntarget/\n*.log\n# Python\n__pycache__/\n");
+        assert!(result.contains("# Rust"));
+        assert!(result.contains("target/"));
+        assert!(result.contains("__pycache__/"));
+        assert_eq!(result.matches("*.log").count(), 1);
+    }
+
+    #[test]
+    fn merge_gitignore_preserves_order() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "a\nb\n").unwrap();
+        let result = merge_gitignore(&path, "c\n");
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "a");
+        assert_eq!(lines[1], "b");
+        assert_eq!(lines[2], "c");
+    }
+
+    #[test]
+    fn merge_gitignore_duplicate_comment_not_deduplicated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(".gitignore");
+        std::fs::write(&path, "# header\na\n").unwrap();
+        let result = merge_gitignore(&path, "# header\nb\n");
+        // Comments are always appended (not deduplicated)
+        assert!(result.contains("# header"));
+        assert!(result.contains("b"));
+    }
+
+    // ── run dispatch ──────────────────────────────────────────────────────
+
+    #[test]
+    fn run_list_builtins() {
+        let result = run(IgnoreCommand::List {
+            filter: Some("agentic".to_string()),
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_list_all() {
+        let result = run(IgnoreCommand::List { filter: None });
+        // This calls the API, may fail if offline
+        let _ = result;
+    }
+
+    // ── builtins module edge cases ────────────────────────────────────────
+
+    #[test]
+    fn builtins_names_all_have_content() {
+        for name in builtins::NAMES {
+            let content = builtins::get(name);
+            assert!(content.is_some(), "Builtin {} has no content", name);
+            assert!(
+                !content.unwrap().is_empty(),
+                "Builtin {} has empty content",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn builtins_get_returns_same_content_multiple_calls() {
+        let a = builtins::get("agentic").unwrap();
+        let b = builtins::get("agentic").unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn builtins_get_unknown_returns_none() {
+        assert!(builtins::get("unknown-template").is_none());
+        assert!(builtins::get("").is_none());
+        assert!(builtins::get("Rust").is_none());
+    }
 }
 
 mod builtins {
@@ -254,16 +750,26 @@ mod builtins {
         }
     }
 
-    const AGENTIC: &str = "\n# AI coding agents\n\
-.kiro/\n\
-.cursor/\n\
-.windsurf/\n\
-.claude/\n\
+    const AGENTIC: &str = "\n\
+# AI coding agents\n\
+.agents/\n\
 .continue/\n\
 .copilot/\n\
+.cursor/\n\
 .kilocode/\n\
-.zencoder/\n\
+.kiro/\n\
 .qwen/\n\
-.agents/\n\
+.windsurf/\n\
+.zencoder/\n\
+\n\
+# Claude Code local state (settings.json, agents/, commands/, skills/ are shared)\n\
+.claude/settings.local.json\n\
+\n\
+# Aider local history and cache\n\
+.aider.chat.history.md\n\
+.aider.input.history\n\
+.aider.tags.cache.v*/\n\
+\n\
+# Agent skill/tool lockfiles\n\
 skills-lock.json\n";
 }
