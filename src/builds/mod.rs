@@ -298,6 +298,24 @@ pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> R
                     continue;
                 }
                 let content = fs::read_to_string(&path).unwrap_or_default();
+
+                let parts = crate::hooks::list_parts(&hooks_dir, &hook_name);
+                if crate::hooks::is_dispatcher(&content, &hook_name) || !parts.is_empty() {
+                    // Capture recognized parts even if the top-level file no
+                    // longer matches the dispatcher gitkit installed — a hand
+                    // replacement of the dispatcher must not hide builtins
+                    // still installed underneath it in gitkit.d/.
+                    for part_name in parts {
+                        if let Some(b) = crate::hooks::builtins::get(&part_name) {
+                            builtins.push(b.name.to_string());
+                        }
+                        // The preserved pre-existing hook (if any) is
+                        // intentionally not captured: builds only replay
+                        // gitkit-managed configuration.
+                    }
+                    continue;
+                }
+
                 if let Some(b) = crate::hooks::detect_builtin(&hook_name, &content) {
                     builtins.push(b.name.to_string());
                 } else if crate::hooks::valid_hook_names().contains(&hook_name.as_str()) {
@@ -1365,6 +1383,63 @@ description = ""
             let content = std::fs::read_to_string(&hook_path).unwrap();
             assert!(content.contains("#!/bin/sh"));
         }
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn apply_build_with_two_builtins_on_one_hook_installs_both_as_parts() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let build = Build {
+            name: "test".to_string(),
+            description: "".to_string(),
+            hooks: HooksConfig {
+                builtins: vec!["conventional-commits".to_string(), "no-body".to_string()],
+                custom: Vec::new(),
+            },
+            gitignore: GitignoreConfig::default(),
+            gitattributes: GitattributesConfig::default(),
+            config: ConfigBuild::default(),
+        };
+        apply_build(&build).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        let parts = hooks_dir.join("gitkit.d").join("commit-msg");
+        assert!(parts.join("conventional-commits").exists());
+        assert!(parts.join("no-body").exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn capture_current_config_captures_every_composed_builtin_on_one_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        crate::hooks::install_builtin("conventional-commits", true).unwrap();
+        crate::hooks::install_builtin("no-body", true).unwrap();
+
+        let build = capture_current_config("test", None).unwrap();
+        assert!(build
+            .hooks
+            .builtins
+            .contains(&"conventional-commits".to_string()));
+        assert!(build.hooks.builtins.contains(&"no-body".to_string()));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }

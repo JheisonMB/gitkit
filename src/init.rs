@@ -254,20 +254,10 @@ pub fn run() -> Result<()> {
         println!("  ◇ hook '{hook}' installed  ✓");
     }
     for hook in &hooks_to_remove {
-        if let Some(builtin) = hooks::available_builtins().iter().find(|b| b.name == *hook) {
-            // Several built-ins can share a hook file (e.g. pre-commit); don't
-            // delete the file if a freshly installed selection now owns it.
-            let file_reused = selected_builtins.iter().any(|sel| {
-                hooks::available_builtins()
-                    .iter()
-                    .any(|b| b.name == *sel && b.hook == builtin.hook)
-            });
-            if file_reused {
-                continue;
-            }
-            if hooks::remove_hook(builtin.hook, true).is_ok() {
-                println!("  ◇ hook '{hook}' removed  ✓");
-            }
+        // `remove_hook` now removes just this builtin's part, so composing
+        // builtins that share a git hook (e.g. pre-commit) are unaffected.
+        if hooks::remove_hook(hook, true).is_ok() {
+            println!("  ◇ hook '{hook}' removed  ✓");
         }
     }
     if !selected_templates.is_empty() {
@@ -339,18 +329,32 @@ fn get_installed_hooks() -> HashSet<String> {
     let Ok(entries) = fs::read_dir(&hooks_dir) else {
         return HashSet::new();
     };
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            !name.ends_with(".bak") && !name.ends_with(".sample")
-        })
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            let content = fs::read_to_string(e.path()).unwrap_or_default();
-            hooks::detect_builtin(&name, &content).map(|b| b.name.to_string())
-        })
-        .collect()
+
+    let mut found = HashSet::new();
+    for entry in entries.filter_map(|e| e.ok()) {
+        if !entry.path().is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".bak") || name.ends_with(".sample") {
+            continue;
+        }
+        let content = fs::read_to_string(entry.path()).unwrap_or_default();
+
+        if hooks::is_dispatcher(&content, &name) {
+            for part in hooks::list_parts(&hooks_dir, &name) {
+                if hooks::builtins::get(&part).is_some() {
+                    found.insert(part);
+                }
+            }
+            continue;
+        }
+
+        if let Some(b) = hooks::detect_builtin(&name, &content) {
+            found.insert(b.name.to_string());
+        }
+    }
+    found
 }
 
 fn get_configured_keys() -> HashSet<String> {

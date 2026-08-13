@@ -101,6 +101,208 @@ pub(crate) fn hooks_dir() -> Result<std::path::PathBuf> {
     Ok(find_repo_root()?.join(".git").join("hooks"))
 }
 
+// ── composition: multiple builtins sharing one git hook ─────────────────────
+//
+// `gitkit hooks add` used to write a builtin's script directly to
+// `.git/hooks/<git-hook>`, so a second builtin targeting the same git hook
+// (e.g. `no-body` after `conventional-commits`, both on `commit-msg`)
+// silently destroyed the first. Now each builtin lives at
+// `.git/hooks/gitkit.d/<git-hook>/<builtin-name>`, and `.git/hooks/<git-hook>`
+// is a small POSIX `sh` dispatcher that runs every executable part in that
+// directory, in sorted order, stopping at the first one that fails.
+
+/// Directory (relative to `.git/hooks`) holding one subdirectory per git hook,
+/// each containing that hook's installed parts.
+pub(crate) const PARTS_DIR_NAME: &str = "gitkit.d";
+
+/// Fixed name for a hand-written hook absorbed into `gitkit.d` when the first
+/// builtin is installed over it. Chosen to sort before any builtin name (all
+/// lowercase letters) in the dispatcher's `for part in "$dir"/*` loop, since a
+/// user's own hook predates gitkit's and must run first.
+pub(crate) const PRESERVED_PART_NAME: &str = "00-preexisting";
+
+/// Path to the directory holding `hook_name`'s installed parts.
+pub(crate) fn parts_dir(hooks_dir: &Path, hook_name: &str) -> std::path::PathBuf {
+    hooks_dir.join(PARTS_DIR_NAME).join(hook_name)
+}
+
+/// The dispatcher script gitkit installs at `.git/hooks/<hook_name>` once any
+/// part is installed for it. Pure POSIX `sh` — no dependency on the `gitkit`
+/// binary, since it runs on the commit/push hot path and must not acquire new
+/// ways to fail (same reasoning as the lock hooks in `src/lock/mod.rs`).
+pub(crate) fn dispatcher_script(hook_name: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+# Installed by gitkit. Runs every executable part in
+# .git/hooks/gitkit.d/{hook_name}/, in sorted order, passing this hook's own
+# arguments through. The first part to exit non-zero stops here and the rest
+# do not run. See `gitkit hooks list` / `gitkit hooks remove`.
+dir=$(dirname "$0")/gitkit.d/{hook_name}
+if [ -d "$dir" ]; then
+  for part in "$dir"/*; do
+    [ -f "$part" ] && [ -x "$part" ] || continue
+    "$part" "$@"
+    status=$?
+    if [ "$status" -ne 0 ]; then
+      exit "$status"
+    fi
+  done
+fi
+exit 0
+"#
+    )
+}
+
+/// Whether `content` (the current content of `.git/hooks/<hook_name>`) is
+/// exactly the dispatcher gitkit installs for that hook.
+pub(crate) fn is_dispatcher(content: &str, hook_name: &str) -> bool {
+    content.trim() == dispatcher_script(hook_name).trim()
+}
+
+/// Names of every part installed under `gitkit.d/<hook_name>/`, sorted —
+/// matching the order the dispatcher itself runs them in.
+pub(crate) fn list_parts(hooks_dir: &Path, hook_name: &str) -> Vec<String> {
+    let dir = parts_dir(hooks_dir, hook_name);
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Ensures `.git/hooks/<hook_name>` is a gitkit dispatcher, migrating any
+/// pre-existing content into `gitkit.d/<hook_name>/` as a part first:
+/// - if it's a script matching a known builtin verbatim (the pre-composition
+///   damaged shape), it's absorbed under that builtin's name.
+/// - otherwise (a hand-written hook) it's absorbed as [`PRESERVED_PART_NAME`].
+///
+/// A no-op if the dispatcher is already in place.
+fn ensure_dispatcher(dir: &Path, hook_name: &str) -> Result<()> {
+    let hook_path = dir.join(hook_name);
+    let parts = parts_dir(dir, hook_name);
+
+    if hook_path.exists() {
+        let content = fs::read_to_string(&hook_path).unwrap_or_default();
+        if !is_dispatcher(&content, hook_name) {
+            fs::create_dir_all(&parts).context("Failed to create gitkit.d parts directory")?;
+            let migrated_name = detect_builtin(hook_name, &content)
+                .map(|b| b.name.to_string())
+                .unwrap_or_else(|| PRESERVED_PART_NAME.to_string());
+            let migrated_path = parts.join(&migrated_name);
+            if !migrated_path.exists() {
+                fs::write(&migrated_path, &content).with_context(|| {
+                    format!("Failed to migrate existing '{hook_name}' hook into gitkit.d")
+                })?;
+                set_executable(&migrated_path)?;
+            }
+        }
+    } else {
+        fs::create_dir_all(&parts).context("Failed to create gitkit.d parts directory")?;
+    }
+
+    let script = dispatcher_script(hook_name);
+    fs::write(&hook_path, &script)
+        .with_context(|| format!("Failed to write dispatcher for hook '{hook_name}'"))?;
+    set_executable(&hook_path)?;
+    Ok(())
+}
+
+/// Installs `script` as part `part_name` of `hook_name`, setting up the
+/// dispatcher (and migrating any pre-existing hook content) if needed.
+pub(crate) fn install_part(hook_name: &str, part_name: &str, script: &str) -> Result<()> {
+    let dir = hooks_dir()?;
+    fs::create_dir_all(&dir).context("Failed to create hooks directory")?;
+    ensure_dispatcher(&dir, hook_name)?;
+    let parts = parts_dir(&dir, hook_name);
+    let part_path = parts.join(part_name);
+    fs::write(&part_path, script)
+        .with_context(|| format!("Failed to write part '{part_name}' for hook '{hook_name}'"))?;
+    set_executable(&part_path)?;
+    Ok(())
+}
+
+/// Removes part `part_name` of `hook_name`. When it was the last part,
+/// removes the dispatcher and the (now-empty) parts directory too; when only
+/// the preserved pre-existing hook remains, restores it to
+/// `.git/hooks/<hook_name>` so the repository ends up as it was found.
+///
+/// Never touches `.git/hooks/<hook_name>` unless its current content is still
+/// exactly the dispatcher gitkit installed — mirroring the lock module's rule
+/// that a hook someone replaced by hand is never clobbered. If a user swaps
+/// the dispatcher for their own script after builtins were installed, the
+/// last part's removal leaves that replacement (and, if present, the
+/// preserved pre-existing hook) alone in `gitkit.d/` rather than overwriting
+/// or deleting what the user put there.
+fn remove_part(dir: &Path, hook_name: &str, part_name: &str) -> Result<()> {
+    let parts = parts_dir(dir, hook_name);
+    let part_path = parts.join(part_name);
+    fs::remove_file(&part_path).with_context(|| format!("Failed to remove hook '{part_name}'"))?;
+
+    let remaining = list_parts(dir, hook_name);
+    let hook_path = dir.join(hook_name);
+
+    let hook_content = fs::read_to_string(&hook_path).unwrap_or_default();
+    if !is_dispatcher(&hook_content, hook_name) {
+        // The dispatcher was replaced by hand; leave it and any remaining
+        // parts (including a preserved pre-existing hook) exactly as they
+        // are — we can no longer safely decide what belongs at this path.
+        return Ok(());
+    }
+
+    if remaining.is_empty() {
+        let _ = fs::remove_file(&hook_path);
+        let _ = fs::remove_dir(&parts);
+    } else if remaining.len() == 1 && remaining[0] == PRESERVED_PART_NAME {
+        let preserved_path = parts.join(PRESERVED_PART_NAME);
+        let content = fs::read(&preserved_path)?;
+        fs::write(&hook_path, &content)
+            .with_context(|| format!("Failed to restore original '{hook_name}' hook"))?;
+        set_executable(&hook_path)?;
+        fs::remove_file(&preserved_path)?;
+        let _ = fs::remove_dir(&parts);
+    }
+
+    Ok(())
+}
+
+/// Health of one installed part within `gitkit.d/<hook_name>/`, mirroring
+/// [`classify_hook`]'s categories but also accounting for the dispatcher's
+/// own executable bit — a part stays `Dormant` if the dispatcher that would
+/// run it is itself not executable, since git never even reaches it then.
+pub(crate) fn classify_part(dir: &Path, hook_name: &str, part_name: &str) -> Result<HookHealth> {
+    let part_path = parts_dir(dir, hook_name).join(part_name);
+    if !part_path.exists() {
+        return Ok(HookHealth::Absent);
+    }
+
+    let dispatcher_path = dir.join(hook_name);
+    let dispatcher_ok = dispatcher_path.exists() && is_executable(&dispatcher_path)?;
+
+    let bytes =
+        fs::read(&part_path).with_context(|| format!("Failed to read part '{part_name}'"))?;
+    let recognized = match std::str::from_utf8(&bytes) {
+        Ok(content) => {
+            part_name == PRESERVED_PART_NAME
+                || builtins::get(part_name).is_some_and(|b| content.trim() == b.script.trim())
+        }
+        Err(_) => false,
+    };
+
+    if !recognized {
+        return Ok(HookHealth::Modified);
+    }
+
+    if dispatcher_ok && is_executable(&part_path)? {
+        Ok(HookHealth::Active)
+    } else {
+        Ok(HookHealth::Dormant)
+    }
+}
+
 const VALID_HOOKS: &[&str] = &[
     "applypatch-msg",
     "commit-msg",
@@ -124,6 +326,14 @@ fn add(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
+    if let Some(builtin) = builtins::get(hook_or_builtin) {
+        anyhow::ensure!(
+            command.is_none(),
+            "'{hook_or_builtin}' is a built-in hook — no command needed"
+        );
+        return add_builtin_part(builtin, yes, force, dry_run);
+    }
+
     let (hook_name, script) = resolve_hook(hook_or_builtin, command)?;
     let dir = hooks_dir()?;
     let path = dir.join(hook_name);
@@ -156,8 +366,57 @@ fn add(
     Ok(())
 }
 
+/// Installs a builtin as a part of its git hook's dispatcher (composing with
+/// whatever else already targets that hook, per `add`'s interactive UX).
+fn add_builtin_part(
+    builtin: &'static builtins::Builtin,
+    yes: bool,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let dir = hooks_dir()?;
+    let part_path = parts_dir(&dir, builtin.hook).join(builtin.name);
+
+    if part_path.exists() && !force {
+        let existing = fs::read_to_string(&part_path).unwrap_or_default();
+        if existing.trim() != builtin.script.trim()
+            && !confirm(
+                &format!("Hook '{}' already exists. Overwrite?", builtin.name),
+                yes,
+            )
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    if dry_run {
+        println!(
+            "[dry-run] Would write hook '{}':\n{}",
+            builtin.hook, builtin.script
+        );
+        return Ok(());
+    }
+
+    install_part(builtin.hook, builtin.name, builtin.script)?;
+    record_applied(builtin.name);
+    println!("Installed hook '{}'.", builtin.hook);
+    Ok(())
+}
+
 /// Silent version for the wizard — no backup messages, no "Installed" print.
 fn add_quiet(hook_or_builtin: &str, command: Option<&str>, force: bool) -> Result<()> {
+    if let Some(builtin) = builtins::get(hook_or_builtin) {
+        anyhow::ensure!(
+            command.is_none(),
+            "'{hook_or_builtin}' is a built-in hook — no command needed"
+        );
+        let _ = force;
+        install_part(builtin.hook, builtin.name, builtin.script)?;
+        record_applied(builtin.name);
+        return Ok(());
+    }
+
     let (hook_name, script) = resolve_hook(hook_or_builtin, command)?;
     let dir = hooks_dir()?;
     let path = dir.join(hook_name);
@@ -219,6 +478,7 @@ fn list(available: bool) -> Result<()> {
     let hooks: Vec<_> = fs::read_dir(&dir)
         .context("Failed to read hooks directory")?
         .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
         .filter(|e| {
             let name = e.file_name();
             let s = name.to_string_lossy();
@@ -242,14 +502,34 @@ fn remove(hook: &str, yes: bool, _dry_run: bool) -> Result<()> {
 }
 
 pub(crate) fn remove_hook(hook: &str, _yes: bool) -> Result<()> {
-    let path = hooks_dir()?.join(hook);
+    let dir = hooks_dir()?;
+
+    if let Some(builtin) = builtins::get(hook) {
+        let part_path = parts_dir(&dir, builtin.hook).join(builtin.name);
+        anyhow::ensure!(part_path.exists(), "Hook '{hook}' is not installed");
+        return remove_part(&dir, builtin.hook, builtin.name);
+    }
+
+    let path = dir.join(hook);
     anyhow::ensure!(path.exists(), "Hook '{hook}' is not installed");
     fs::remove_file(&path).with_context(|| format!("Failed to remove hook '{hook}'"))?;
     Ok(())
 }
 
 fn show(hook: &str) -> Result<()> {
-    let path = hooks_dir()?.join(hook);
+    let dir = hooks_dir()?;
+
+    if let Some(builtin) = builtins::get(hook) {
+        let part_path = parts_dir(&dir, builtin.hook).join(builtin.name);
+        if part_path.exists() {
+            let content = fs::read_to_string(&part_path)
+                .with_context(|| format!("Failed to read hook '{hook}'"))?;
+            print!("{content}");
+            return Ok(());
+        }
+    }
+
+    let path = dir.join(hook);
     anyhow::ensure!(path.exists(), "Hook '{hook}' is not installed");
     let content =
         fs::read_to_string(&path).with_context(|| format!("Failed to read hook '{hook}'"))?;
@@ -663,8 +943,17 @@ mod tests {
         assert!(result.is_ok());
         let hook_path = dir.path().join(".git").join("hooks").join("commit-msg");
         assert!(hook_path.exists());
-        let content = std::fs::read_to_string(&hook_path).unwrap();
-        assert!(content.contains("#!/bin/sh"));
+        let dispatcher = std::fs::read_to_string(&hook_path).unwrap();
+        assert!(dispatcher.contains("#!/bin/sh"));
+        let part_path = dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("gitkit.d")
+            .join("commit-msg")
+            .join("conventional-commits");
+        assert!(part_path.exists());
+        let content = std::fs::read_to_string(&part_path).unwrap();
         assert!(content.contains("Conventional Commits"));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -812,7 +1101,15 @@ mod tests {
         assert!(result.is_ok());
         let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
         assert!(hook_path.exists());
-        let content = std::fs::read_to_string(&hook_path).unwrap();
+        let part_path = dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("gitkit.d")
+            .join("pre-commit")
+            .join("no-secrets");
+        assert!(part_path.exists());
+        let content = std::fs::read_to_string(&part_path).unwrap();
         assert!(content.contains("secret"));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1260,6 +1557,244 @@ mod tests {
         let result = add("pre-push", Some("echo test"), true, true, true);
         assert!(result.is_ok());
         // hooks dir should NOT be created in dry_run mode
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── GK-A: composition — multiple builtins sharing one git hook ─────────
+
+    /// Runs `.git/hooks/<hook_name>` exactly as git would invoke a commit-msg
+    /// hook: `<hook> <msg-file>`. Returns (exit success, combined output).
+    fn run_dispatcher(
+        hooks_dir: &std::path::Path,
+        hook_name: &str,
+        message: &str,
+    ) -> (bool, String) {
+        let msg_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(msg_file.path(), message).unwrap();
+        let output = std::process::Command::new(hooks_dir.join(hook_name))
+            .arg(msg_file.path())
+            .output()
+            .expect("failed to run dispatcher");
+        let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
+        combined.push_str(&String::from_utf8_lossy(&output.stderr));
+        (output.status.success(), combined)
+    }
+
+    #[serial]
+    #[test]
+    fn installing_two_builtins_for_one_hook_leaves_both_as_parts_and_a_dispatcher() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("no-body", true).unwrap();
+
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        let parts = hooks_dir.join("gitkit.d").join("commit-msg");
+        let cc_part = parts.join("conventional-commits");
+        let nb_part = parts.join("no-body");
+        assert!(cc_part.exists());
+        assert!(nb_part.exists());
+        assert!(is_executable(&cc_part).unwrap());
+        assert!(is_executable(&nb_part).unwrap());
+
+        let dispatcher_path = hooks_dir.join("commit-msg");
+        assert!(dispatcher_path.exists());
+        assert!(is_executable(&dispatcher_path).unwrap());
+        let dispatcher_content = std::fs::read_to_string(&dispatcher_path).unwrap();
+        assert!(is_dispatcher(&dispatcher_content, "commit-msg"));
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn dispatcher_rejects_message_that_violates_only_conventional_commits() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("no-body", true).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+
+        // Non-conventional single-line subject: fails conventional-commits,
+        // would pass no-body on its own.
+        let (accepted, output) = run_dispatcher(&hooks_dir, "commit-msg", "just a message\n");
+        assert!(!accepted, "expected rejection: {output}");
+        assert!(
+            output.contains("Conventional Commits"),
+            "must name the conventional-commits failure: {output}"
+        );
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn dispatcher_rejects_message_that_violates_only_no_body() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("no-body", true).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+
+        // Conventional subject followed by a bulleted body: passes
+        // conventional-commits, fails no-body.
+        let (accepted, output) = run_dispatcher(
+            &hooks_dir,
+            "commit-msg",
+            "feat(x): add thing\n\n- bullet one\n- bullet two\n",
+        );
+        assert!(!accepted, "expected rejection: {output}");
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn dispatcher_accepts_message_that_passes_both_builtins() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("no-body", true).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+
+        let (accepted, output) = run_dispatcher(&hooks_dir, "commit-msg", "feat(x): add thing\n");
+        assert!(accepted, "expected acceptance: {output}");
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn installing_same_builtin_twice_leaves_exactly_one_part() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("conventional-commits", true).unwrap();
+
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        let parts = list_parts(&hooks_dir, "commit-msg");
+        assert_eq!(parts, vec!["conventional-commits".to_string()]);
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn hand_written_hook_is_preserved_runs_and_is_restored_when_last_builtin_removed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(
+            hooks_dir.join("commit-msg"),
+            "#!/bin/sh\necho hand-written ran >&2\n",
+        )
+        .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+
+        let preserved_part = hooks_dir
+            .join("gitkit.d")
+            .join("commit-msg")
+            .join(PRESERVED_PART_NAME);
+        assert!(preserved_part.exists());
+
+        let (_, output) = run_dispatcher(&hooks_dir, "commit-msg", "feat(x): add thing\n");
+        assert!(
+            output.contains("hand-written ran"),
+            "hand-written hook must still run: {output}"
+        );
+
+        remove_hook("conventional-commits", true).unwrap();
+
+        assert!(!preserved_part.exists());
+        assert!(!hooks_dir.join("gitkit.d").join("commit-msg").exists());
+        let restored = std::fs::read_to_string(hooks_dir.join("commit-msg")).unwrap();
+        assert!(restored.contains("hand-written ran"));
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn removing_one_of_two_builtins_leaves_the_other_running() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+        install_builtin("no-body", true).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+
+        remove_hook("no-body", true).unwrap();
+
+        let parts = list_parts(&hooks_dir, "commit-msg");
+        assert_eq!(parts, vec!["conventional-commits".to_string()]);
+        assert!(hooks_dir.join("commit-msg").exists());
+
+        // conventional-commits still rejects a non-conventional subject.
+        let (accepted, _) = run_dispatcher(&hooks_dir, "commit-msg", "not conventional\n");
+        assert!(!accepted, "surviving builtin must still run");
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn migration_absorbs_a_bare_builtin_script_when_a_new_builtin_is_added() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        // The pre-composition damaged shape: a bare builtin script sitting
+        // directly at .git/hooks/commit-msg.
+        let no_body = builtins::get("no-body").unwrap();
+        std::fs::write(hooks_dir.join("commit-msg"), no_body.script).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+
+        let parts = list_parts(&hooks_dir, "commit-msg");
+        assert_eq!(
+            parts,
+            vec!["conventional-commits".to_string(), "no-body".to_string()]
+        );
+        let dispatcher_content = std::fs::read_to_string(hooks_dir.join("commit-msg")).unwrap();
+        assert!(is_dispatcher(&dispatcher_content, "commit-msg"));
+
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }

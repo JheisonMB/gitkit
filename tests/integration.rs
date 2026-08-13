@@ -1359,3 +1359,40 @@ fn no_invisibles_fixture_blocks_zero_width_space_then_accepts_clean_commit() {
     let (ok, msg) = git_commit_with_path(dir.path(), "cleaned up", &path);
     assert!(ok, "clean commit should pass silently: {msg}");
 }
+
+// ── GK-A: composition — `gitkit status` lists every composed builtin ───────
+
+#[test]
+fn status_lists_both_builtins_installed_for_one_git_hook() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
+    let binary = gitkit_binary();
+
+    for builtin in ["conventional-commits", "no-body"] {
+        let install_out = Command::new(&binary)
+            .env("GITKIT_NO_UPDATE_CHECK", "1")
+            .env("HOME", dir.path())
+            .args(["hooks", "add", builtin, "--yes", "--force"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap_or_else(|_| panic!("Failed to run gitkit hooks add {builtin}"));
+        assert!(install_out.status.success());
+    }
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status");
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("conventional-commits"),
+        "status output was:\n{stdout}"
+    );
+    assert!(stdout.contains("no-body"), "status output was:\n{stdout}");
+}

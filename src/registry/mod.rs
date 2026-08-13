@@ -189,6 +189,16 @@ fn detect_installed_builtins(git_dir: &Path) -> Vec<String> {
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };
+
+        if crate::hooks::is_dispatcher(&content, &name) {
+            for part in crate::hooks::list_parts(&hooks_dir, &name) {
+                if crate::hooks::builtins::get(&part).is_some() {
+                    found.push(part);
+                }
+            }
+            continue;
+        }
+
         if let Some(b) = crate::hooks::detect_builtin(&name, &content) {
             found.push(b.name.to_string());
         }

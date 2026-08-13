@@ -124,8 +124,18 @@ fn run_global(prune: bool) -> Result<()> {
             let hook_file = crate::hooks::builtins::get(name)
                 .map(|b| b.hook.to_string())
                 .unwrap_or_else(|| name.to_string());
-            let hook_path = hooks_dir.join(&hook_file);
-            let health = crate::hooks::classify_hook(&hook_file, &hook_path)?;
+
+            let health = if let Some(builtin) = crate::hooks::builtins::get(name) {
+                let part_path =
+                    crate::hooks::parts_dir(&hooks_dir, builtin.hook).join(builtin.name);
+                if part_path.exists() {
+                    crate::hooks::classify_part(&hooks_dir, builtin.hook, builtin.name)?
+                } else {
+                    crate::hooks::classify_hook(&hook_file, &hooks_dir.join(&hook_file))?
+                }
+            } else {
+                crate::hooks::classify_hook(&hook_file, &hooks_dir.join(&hook_file))?
+            };
 
             match health {
                 HookHealth::Dormant => {
@@ -220,6 +230,7 @@ fn print_hooks(repair: bool) -> Result<bool> {
 
     let installed: Vec<_> = fs::read_dir(&hooks_dir)?
         .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
         .filter(|e| {
             let name = e.file_name();
             let s = name.to_string_lossy();
@@ -237,6 +248,25 @@ fn print_hooks(repair: bool) -> Result<bool> {
     for entry in installed {
         let hook_name = entry.file_name().to_string_lossy().to_string();
         let path = entry.path();
+        let content = fs::read_to_string(&path).unwrap_or_default();
+        let is_dispatcher = crate::hooks::is_dispatcher(&content, &hook_name);
+        let has_parts = !crate::hooks::list_parts(&hooks_dir, &hook_name).is_empty();
+
+        if is_dispatcher || has_parts {
+            if !is_dispatcher {
+                // Content no longer matches what gitkit installed, but parts
+                // are still present — report the mismatch without hiding the
+                // builtins still recorded underneath it.
+                let skip_note = if repair { " (repair skipped)" } else { "" };
+                println!(
+                    "  ~ {hook_name}{skip_note} — modified: dispatcher content doesn't match what gitkit installed; builtins below only run if this file still invokes them"
+                );
+            }
+            let hook_dormant = print_dispatcher_parts(&hooks_dir, &hook_name, repair)?;
+            dormant_found |= hook_dormant;
+            continue;
+        }
+
         let health = crate::hooks::classify_hook(&hook_name, &path)?;
 
         if repair && health == HookHealth::Dormant {
@@ -273,6 +303,47 @@ fn print_hooks(repair: bool) -> Result<bool> {
                 // Defensive only, in case the file vanished mid-scan.
                 println!("  ? {hook_name} — vanished during scan");
             }
+        }
+    }
+
+    Ok(dormant_found)
+}
+
+/// Prints the health of every part composed under a dispatcher hook and, if
+/// `repair` is set, sets the executable bit on the dispatcher itself and on
+/// any dormant part. Returns whether anything is still dormant afterward.
+fn print_dispatcher_parts(hooks_dir: &Path, hook_name: &str, repair: bool) -> Result<bool> {
+    let dispatcher_path = hooks_dir.join(hook_name);
+    let mut dormant_found = false;
+
+    if repair && !crate::hooks::is_executable(&dispatcher_path)? {
+        crate::hooks::set_executable(&dispatcher_path)?;
+    }
+
+    for part_name in crate::hooks::list_parts(hooks_dir, hook_name) {
+        let part_path = crate::hooks::parts_dir(hooks_dir, hook_name).join(&part_name);
+        let health = crate::hooks::classify_part(hooks_dir, hook_name, &part_name)?;
+
+        if repair && health == HookHealth::Dormant {
+            crate::hooks::set_executable(&part_path)?;
+            println!(
+                "  ✓ {part_name} ({hook_name}) — repaired: set executable, git will now run it"
+            );
+            continue;
+        }
+
+        match health {
+            HookHealth::Active => println!("  ✓ {part_name} ({hook_name}) — active"),
+            HookHealth::Dormant => {
+                dormant_found = true;
+                println!(
+                    "  ✗ {part_name} ({hook_name}) — dormant: not executable, so git ignores it and never runs it (fix with `gitkit status --repair`)"
+                );
+            }
+            HookHealth::Modified => {
+                println!("  ~ {part_name} ({hook_name}) — modified since install");
+            }
+            HookHealth::Absent => {}
         }
     }
 
@@ -617,6 +688,52 @@ mod tests {
             crate::hooks::classify_hook("pre-commit", &path).unwrap(),
             HookHealth::Active
         );
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn repair_sets_executable_bit_on_dormant_part_and_on_dispatcher() {
+        // GK-A: two builtins composed on one git hook via the gitkit.d
+        // dispatcher; both the dispatcher and one of its parts lose their
+        // executable bit, and `--repair` must fix both.
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        crate::hooks::install_builtin("conventional-commits", true).unwrap();
+        crate::hooks::install_builtin("no-body", true).unwrap();
+
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        let dispatcher_path = hooks_dir.join("commit-msg");
+        let dormant_part_path = crate::hooks::parts_dir(&hooks_dir, "commit-msg").join("no-body");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&dispatcher_path, &dormant_part_path] {
+                let mut perms = std::fs::metadata(path).unwrap().permissions();
+                perms.set_mode(0o644);
+                std::fs::set_permissions(path, perms).unwrap();
+            }
+        }
+
+        let dormant_found = print_hooks(true).unwrap();
+        assert!(!dormant_found, "repair should leave nothing dormant");
+
+        #[cfg(unix)]
+        {
+            assert!(crate::hooks::is_executable(&dispatcher_path).unwrap());
+            assert!(crate::hooks::is_executable(&dormant_part_path).unwrap());
+        }
+        assert_eq!(
+            crate::hooks::classify_part(&hooks_dir, "commit-msg", "no-body").unwrap(),
+            HookHealth::Active
+        );
+
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
