@@ -253,6 +253,91 @@ mod tests {
     }
 
     #[test]
+    fn agentic_template_has_representative_entry_per_group() {
+        let result = resolve_templates("agentic").unwrap();
+        // AI coding agents: local directories with no known shared-content convention
+        assert!(result.contains(".kiro/"));
+        // Claude Code: narrowed to local state only, not the whole shared directory
+        assert!(result.contains(".claude/settings.local.json"));
+        assert!(!result.lines().any(|l| l.trim() == ".claude/"));
+        // Aider: local chat/input history and tag cache
+        assert!(result.contains(".aider.chat.history.md"));
+        // Agent skill/tool lockfiles
+        assert!(result.contains("skills-lock.json"));
+    }
+
+    #[test]
+    fn agentic_template_never_ignores_agent_doc_files() {
+        let content = builtins::get("agentic").unwrap();
+        for line in content.lines() {
+            let pattern = line.trim();
+            if pattern.is_empty() || pattern.starts_with('#') {
+                continue;
+            }
+            assert_ne!(pattern, "CLAUDE.md", "template must not ignore CLAUDE.md");
+            assert_ne!(pattern, "AGENTS.md", "template must not ignore AGENTS.md");
+            assert!(
+                !pattern.ends_with("/CLAUDE.md"),
+                "template must not ignore a nested CLAUDE.md"
+            );
+            assert!(
+                !pattern.ends_with("/AGENTS.md"),
+                "template must not ignore a nested AGENTS.md"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_gitignore_agentic_merges_cleanly_with_previous_version() {
+        // The block gitkit shipped before this template gained new groups.
+        let previous = "\n# AI coding agents\n\
+.kiro/\n\
+.cursor/\n\
+.windsurf/\n\
+.claude/\n\
+.continue/\n\
+.copilot/\n\
+.kilocode/\n\
+.zencoder/\n\
+.qwen/\n\
+.agents/\n\
+skills-lock.json\n";
+        let (_dir, path) = tmp_gitignore(previous);
+        let new_content = builtins::get("agentic").unwrap();
+        let merged = merge_gitignore(&path, new_content);
+
+        // Lines shared verbatim between the old and new template must not be duplicated.
+        for pattern in [
+            ".kiro/",
+            ".cursor/",
+            ".windsurf/",
+            ".agents/",
+            "skills-lock.json",
+        ] {
+            let count = merged.lines().filter(|l| *l == pattern).count();
+            assert_eq!(count, 1, "pattern {pattern} duplicated after merge");
+        }
+    }
+
+    #[test]
+    fn merge_gitignore_agentic_reapply_does_not_duplicate_patterns() {
+        let content = builtins::get("agentic").unwrap();
+        let (_dir, path) = tmp_gitignore(content);
+        let merged = merge_gitignore(&path, content);
+
+        for pattern in content
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            let count = merged.lines().filter(|l| *l == pattern).count();
+            assert_eq!(
+                count, 1,
+                "pattern {pattern} duplicated after reapplying template"
+            );
+        }
+    }
+
+    #[test]
     fn merge_gitignore_only_comments_appended() {
         let (_dir, path) = tmp_gitignore("target/\n");
         let new = "# just a comment\n# another\n";
@@ -440,8 +525,9 @@ mod tests {
         assert!(content.contains(".kiro/"));
         assert!(content.contains(".cursor/"));
         assert!(content.contains(".windsurf/"));
-        assert!(content.contains(".claude/"));
+        assert!(content.contains(".claude/settings.local.json"));
         assert!(content.contains(".agents/"));
+        assert!(content.contains(".aider.chat.history.md"));
         assert!(content.contains("skills-lock.json"));
     }
 
@@ -664,16 +750,26 @@ mod builtins {
         }
     }
 
-    const AGENTIC: &str = "\n# AI coding agents\n\
-.kiro/\n\
-.cursor/\n\
-.windsurf/\n\
-.claude/\n\
+    const AGENTIC: &str = "\n\
+# AI coding agents\n\
+.agents/\n\
 .continue/\n\
 .copilot/\n\
+.cursor/\n\
 .kilocode/\n\
-.zencoder/\n\
+.kiro/\n\
 .qwen/\n\
-.agents/\n\
+.windsurf/\n\
+.zencoder/\n\
+\n\
+# Claude Code local state (settings.json, agents/, commands/, skills/ are shared)\n\
+.claude/settings.local.json\n\
+\n\
+# Aider local history and cache\n\
+.aider.chat.history.md\n\
+.aider.input.history\n\
+.aider.tags.cache.v*/\n\
+\n\
+# Agent skill/tool lockfiles\n\
 skills-lock.json\n";
 }
