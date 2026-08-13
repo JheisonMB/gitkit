@@ -296,7 +296,6 @@ pub fn run() -> Result<()> {
         .prompt()?;
 
     if save_build {
-        let name = Text::new("  Build name").prompt()?;
         let description = Text::new("  Description (optional)")
             .with_default("")
             .prompt()?;
@@ -305,13 +304,118 @@ pub fn run() -> Result<()> {
         } else {
             Some(description.as_str())
         };
-        if let Err(e) = builds::save(&name, desc_ref) {
-            println!("  ⚠ Failed to save build: {e}");
-        }
+
+        save_build_interactive(desc_ref)?;
     }
 
     println!("\n  Done\n");
     Ok(())
+}
+
+const MAX_SAVE_ATTEMPTS: u32 = 3;
+
+#[derive(Debug, PartialEq, Eq)]
+enum SaveRetryDecision {
+    /// Collision, and attempts remain — offer a different name or overwrite.
+    Retry,
+    /// Collision, but attempts are exhausted — stop asking.
+    GiveUp,
+    /// Not a collision — not retryable, stop asking.
+    Abort,
+}
+
+/// Pure decision logic for the wizard's save retry loop, kept separate from
+/// the interactive prompting around it so it can be tested directly.
+fn decide_save_retry(
+    is_collision: bool,
+    attempts_used: u32,
+    max_attempts: u32,
+) -> SaveRetryDecision {
+    if !is_collision {
+        return SaveRetryDecision::Abort;
+    }
+    if attempts_used >= max_attempts {
+        SaveRetryDecision::GiveUp
+    } else {
+        SaveRetryDecision::Retry
+    }
+}
+
+/// Runs the interactive name-prompt / retry loop for saving a build at the
+/// end of the wizard. Never leaves a failed save unreported: on any exit
+/// path other than success, it states plainly that the build was not saved.
+fn save_build_interactive(desc_ref: Option<&str>) -> Result<()> {
+    let mut pending_name = Text::new("  Build name").prompt_skippable()?;
+    let mut attempts: u32 = 0;
+
+    loop {
+        let name = match pending_name.take() {
+            Some(n) if !n.is_empty() => n,
+            // Cancelled (Ctrl-C/Esc) or an empty answer: the user changed
+            // their mind about saving. Not an error — finish quietly.
+            _ => return Ok(()),
+        };
+
+        match builds::save(&name, desc_ref) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                attempts += 1;
+                let is_collision = builds::is_build_name_collision(&e);
+                match decide_save_retry(is_collision, attempts, MAX_SAVE_ATTEMPTS) {
+                    SaveRetryDecision::Abort => {
+                        report_unsaved_build(&name, desc_ref, &e.to_string());
+                        return Ok(());
+                    }
+                    SaveRetryDecision::GiveUp => {
+                        report_unsaved_build(
+                            &name,
+                            desc_ref,
+                            &format!("gave up after {attempts} attempts: {e}"),
+                        );
+                        return Ok(());
+                    }
+                    SaveRetryDecision::Retry => {
+                        let overwrite_option = format!("Overwrite existing build '{name}'");
+                        let choice = Select::new(
+                            "  A build with that name already exists",
+                            vec![
+                                "Choose a different name".to_string(),
+                                overwrite_option.clone(),
+                            ],
+                        )
+                        .prompt_skippable()?;
+
+                        if choice.as_deref() == Some(overwrite_option.as_str()) {
+                            match builds::save_overwrite(&name, desc_ref) {
+                                Ok(()) => return Ok(()),
+                                Err(e) => {
+                                    report_unsaved_build(&name, desc_ref, &e.to_string());
+                                    return Ok(());
+                                }
+                            }
+                        } else {
+                            pending_name = Text::new("  Build name").prompt_skippable()?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The build the user asked for was not saved. Say so explicitly, and dump
+/// the configuration that would have been saved so it can be recreated by
+/// hand — losing this silently is the one thing the wizard must never do.
+fn report_unsaved_build(name: &str, description: Option<&str>, reason: &str) {
+    println!("  ⚠ Build was not saved: {reason}");
+    if let Ok(build) = builds::capture_current_config(name, description) {
+        if let Ok(toml_str) = toml::to_string_pretty(&build) {
+            println!(
+                "  Configuration below was not saved — copy it to a builds file by hand if needed:\n"
+            );
+            println!("{toml_str}");
+        }
+    }
 }
 
 fn load_ignore_templates() -> Vec<String> {
@@ -454,6 +558,26 @@ mod tests {
         let keys = vec!["key_a", "key_b"];
         let result = resolve_keys(&selections, &labels, &keys);
         assert!(result.is_empty());
+    }
+
+    // ── decide_save_retry ───────────────────────────────────────────────────
+
+    #[test]
+    fn decide_save_retry_non_collision_always_aborts() {
+        assert_eq!(decide_save_retry(false, 1, 3), SaveRetryDecision::Abort);
+        assert_eq!(decide_save_retry(false, 3, 3), SaveRetryDecision::Abort);
+    }
+
+    #[test]
+    fn decide_save_retry_collision_retries_while_attempts_remain() {
+        assert_eq!(decide_save_retry(true, 1, 3), SaveRetryDecision::Retry);
+        assert_eq!(decide_save_retry(true, 2, 3), SaveRetryDecision::Retry);
+    }
+
+    #[test]
+    fn decide_save_retry_collision_gives_up_at_max_attempts() {
+        assert_eq!(decide_save_retry(true, 3, 3), SaveRetryDecision::GiveUp);
+        assert_eq!(decide_save_retry(true, 4, 3), SaveRetryDecision::GiveUp);
     }
 
     #[test]
