@@ -20,6 +20,8 @@ fn gitkit_binary() -> std::path::PathBuf {
 fn run_gitkit(args: &[&str]) -> (bool, String) {
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
         .args(args)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
@@ -111,6 +113,9 @@ fn cli_status_outside_repo() {
     let dir = TempDir::new().unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["status"])
         .current_dir(dir.path())
         .output()
@@ -124,6 +129,9 @@ fn cli_hooks_list_outside_repo() {
     let dir = TempDir::new().unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "list"])
         .current_dir(dir.path())
         .output()
@@ -139,6 +147,9 @@ fn cli_build_list_empty() {
     let dir = TempDir::new().unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["build", "list"])
         .current_dir(dir.path())
         .output()
@@ -157,6 +168,9 @@ fn cli_hooks_add_invalid_builtin() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "nonexistent-builtin"])
         .current_dir(dir.path())
         .output()
@@ -179,6 +193,9 @@ fn cli_hooks_add_custom_hook() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "pre-push", "echo test"])
         .current_dir(dir.path())
         .output()
@@ -203,6 +220,9 @@ fn cli_hooks_add_builtin_conventional_commits() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "conventional-commits"])
         .current_dir(dir.path())
         .output()
@@ -227,6 +247,9 @@ fn cli_hooks_remove_installed_hook() {
 
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "remove", "--yes", "pre-push"])
         .current_dir(dir.path())
         .output()
@@ -248,6 +271,9 @@ fn cli_hooks_remove_nonexistent_hook() {
 
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "remove", "--yes", "nonexistent-hook"])
         .current_dir(dir.path())
         .output()
@@ -269,6 +295,9 @@ fn cli_hooks_show_installed_hook() {
 
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "show", "pre-push"])
         .current_dir(dir.path())
         .output()
@@ -286,6 +315,9 @@ fn cli_hooks_show_nonexistent_hook() {
 
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "show", "nonexistent"])
         .current_dir(dir.path())
         .output()
@@ -300,6 +332,9 @@ fn cli_hooks_add_invalid_hook_name() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "not-a-real-hook", "echo hi"])
         .current_dir(dir.path())
         .output()
@@ -318,6 +353,9 @@ fn cli_hooks_add_custom_hook_creates_executable() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["hooks", "add", "--yes", "pre-commit", "echo hello"])
         .current_dir(dir.path())
         .output()
@@ -339,6 +377,9 @@ fn cli_hooks_add_with_dry_run() {
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args([
             "hooks",
             "add",
@@ -368,6 +409,9 @@ fn cli_ignore_add_dry_run() {
     std::fs::create_dir(dir.path().join(".git")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["ignore", "add", "--yes", "--dry-run", "rust"])
         .current_dir(dir.path())
         .output()
@@ -383,6 +427,9 @@ fn cli_attributes_init_dry_run() {
     std::fs::create_dir(dir.path().join(".git")).unwrap();
     let binary = gitkit_binary();
     let output = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
         .args(["attributes", "init", "--yes", "--dry-run"])
         .current_dir(dir.path())
         .output()
@@ -404,4 +451,948 @@ fn cli_config_apply_dry_run() {
     let (success, output) = run_gitkit(&["config", "apply", "defaults", "--dry-run"]);
     assert!(success);
     assert!(output.contains("[dry-run]") || output.contains("already set"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lock / commit-blocking integration tests (real git repo, real git commit)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn init_git_repo(dir: &std::path::Path) {
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("Failed to run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test User"]);
+    std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+    run(&["add", "README.md"]);
+}
+
+fn git_commit_allow_empty(dir: &std::path::Path, msg: &str) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", msg])
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git commit");
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+#[test]
+fn lock_fixture_commit_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    // Unlocked: commit succeeds.
+    let (ok, _) = git_commit_allow_empty(dir.path(), "initial commit");
+    assert!(ok, "commit should succeed with no lock active");
+
+    // Lock: commit fails and names the reason + how to unlock.
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should fail while locked");
+    assert!(msg.contains("Agent session active"), "message was: {msg}");
+    assert!(msg.contains("gitkit unlock"), "message was: {msg}");
+
+    // Unlock: commit succeeds again.
+    let unlock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit after unlock");
+    assert!(ok, "commit should succeed after unlock");
+}
+
+#[test]
+fn lock_fixture_expired_lock_does_not_block_commit() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--timeout", "30m"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    // Confirm it blocks before expiry.
+    let (ok, _) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should fail while lock has not expired");
+
+    // Rewrite the lock file with an expiry far in the past.
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(
+        &lock_path,
+        r#"{"locked_at":"2000-01-01T00:00:00Z","expires_at":"2000-01-01T00:01:00Z","reason":"stale","operations":["commit"]}"#,
+    )
+    .unwrap();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit after expiry");
+    assert!(ok, "commit should succeed once the lock has expired");
+
+    // status should report the lock as expired.
+    let status_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status");
+    let status_msg = String::from_utf8_lossy(&status_out.stdout);
+    assert!(status_msg.contains("expired"), "status was: {status_msg}");
+}
+
+#[test]
+fn lock_fixture_malformed_lock_file_fails_open() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    // Install the hook via a real lock, then corrupt the lock file.
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(&lock_path, "not json at all {{{").unwrap();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "commit with malformed lock");
+    assert!(ok, "a malformed lock file must never block a commit");
+}
+
+#[test]
+fn lock_fixture_locking_twice_is_idempotent() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let run_lock = |reason: &str| {
+        let out = Command::new(&binary)
+            // Never let a test hit the network via the update check.
+            .env("GITKIT_NO_UPDATE_CHECK", "1")
+            .env("HOME", dir.path())
+            .args(["lock", "--reason", reason])
+            .current_dir(dir.path())
+            .output()
+            .expect("Failed to run gitkit lock");
+        assert!(out.status.success());
+    };
+    run_lock("first reason");
+    run_lock("second reason");
+
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok);
+    assert!(msg.contains("second reason"), "message was: {msg}");
+    assert!(!msg.contains("first reason"), "message was: {msg}");
+
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    assert!(
+        !hooks_dir.join("pre-commit.gitkit-orig").exists(),
+        "locking twice with no prior user hook must not fabricate a backup"
+    );
+}
+
+#[test]
+fn lock_fixture_preserves_existing_user_pre_commit_hook() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+    let user_hook = "#!/bin/sh\necho user-hook-ran >&2\nexit 0\n";
+    std::fs::write(hooks_dir.join("pre-commit"), user_hook).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(hooks_dir.join("pre-commit"))
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(hooks_dir.join("pre-commit"), perms).unwrap();
+    }
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+    assert!(hooks_dir.join("pre-commit.gitkit-orig").exists());
+
+    let unlock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let restored = std::fs::read_to_string(hooks_dir.join("pre-commit")).unwrap();
+    assert_eq!(restored, user_hook);
+    assert!(!hooks_dir.join("pre-commit.gitkit-orig").exists());
+
+    // The restored user hook still runs on commit.
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "commit runs user hook");
+    assert!(ok);
+    assert!(msg.contains("user-hook-ran"), "message was: {msg}");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lock / push-blocking integration tests (real git repo, real git push)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Sets up `dir` as a git repo with an initial commit and a local bare
+/// remote named `origin`, so `git push` can be exercised without touching
+/// the network. Returns the bare remote's `TempDir` - keep it alive for the
+/// duration of the test.
+fn init_git_repo_with_remote(dir: &std::path::Path) -> TempDir {
+    let remote_dir = TempDir::new().unwrap();
+    let status = Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .current_dir(remote_dir.path())
+        .status()
+        .expect("Failed to init bare remote");
+    assert!(status.success());
+
+    init_git_repo(dir);
+    let (ok, _) = git_commit_allow_empty(dir, "initial commit");
+    assert!(ok, "initial commit should succeed");
+
+    let status = Command::new("git")
+        .args([
+            "remote",
+            "add",
+            "origin",
+            remote_dir.path().to_str().unwrap(),
+        ])
+        .current_dir(dir)
+        .status()
+        .expect("Failed to add remote");
+    assert!(status.success());
+
+    remote_dir
+}
+
+fn git_push_head(dir: &std::path::Path) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["push", "origin", "HEAD:refs/heads/main"])
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git push");
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+#[test]
+fn push_fixture_push_succeeds_unlocked_fails_locked_succeeds_after_unlock() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    // Unlocked: push succeeds.
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(ok, "push should succeed with no lock active: {msg}");
+
+    // Lock --push: push fails and names the reason + how to unlock.
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--push", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --push");
+    assert!(lock_out.status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "another commit");
+    assert!(ok, "commit should still succeed - only push is locked");
+
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(!ok, "push should fail while push-locked");
+    assert!(msg.contains("Agent session active"), "message was: {msg}");
+    assert!(msg.contains("gitkit unlock"), "message was: {msg}");
+
+    // Unlock: push succeeds again.
+    let unlock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let (ok, _) = git_push_head(dir.path());
+    assert!(ok, "push should succeed after unlock");
+}
+
+#[test]
+fn push_fixture_expired_lock_does_not_block_push() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--push", "--timeout", "30m"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --push");
+    assert!(lock_out.status.success());
+
+    // Confirm it blocks before expiry.
+    let (ok, _) = git_push_head(dir.path());
+    assert!(!ok, "push should fail while lock has not expired");
+
+    // Rewrite the lock file with an expiry far in the past.
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(
+        &lock_path,
+        r#"{"locked_at":"2000-01-01T00:00:00Z","expires_at":"2000-01-01T00:01:00Z","reason":"stale","operations":["push"]}"#,
+    )
+    .unwrap();
+
+    let (ok, _) = git_push_head(dir.path());
+    assert!(ok, "push should succeed once the lock has expired");
+
+    let status_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status");
+    let status_msg = String::from_utf8_lossy(&status_out.stdout);
+    assert!(status_msg.contains("expired"), "status was: {status_msg}");
+}
+
+#[test]
+fn push_fixture_malformed_lock_file_fails_open() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--push"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --push");
+    assert!(lock_out.status.success());
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(&lock_path, "not json at all {{{").unwrap();
+
+    let (ok, _) = git_push_head(dir.path());
+    assert!(ok, "a malformed lock file must never block a push");
+}
+
+#[test]
+fn push_fixture_commit_lock_alone_does_not_block_push() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    // Only the commit lock is active - push must remain unblocked.
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(ok, "push should succeed while only commit is locked: {msg}");
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should still fail while commit-locked");
+}
+
+#[test]
+fn push_fixture_all_locks_both_commit_and_push() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--all", "--reason", "full lockdown"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --all");
+    assert!(lock_out.status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should fail under --all");
+
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(!ok, "push should fail under --all: {msg}");
+    assert!(msg.contains("full lockdown"), "message was: {msg}");
+}
+
+#[test]
+fn push_fixture_adding_push_lock_preserves_commit_lock_reason() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--reason", "original session"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    // Extend to push without a new --reason.
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--push"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --push");
+    assert!(lock_out.status.success());
+
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(!ok, "push should fail once push is locked");
+    assert!(msg.contains("original session"), "message was: {msg}");
+
+    let (ok, msg) = git_commit_allow_empty(dir.path(), "blocked commit");
+    assert!(!ok, "commit should still fail too");
+    assert!(msg.contains("original session"), "message was: {msg}");
+}
+
+#[test]
+fn push_fixture_preserves_existing_user_pre_push_hook() {
+    let dir = TempDir::new().unwrap();
+    let _remote = init_git_repo_with_remote(dir.path());
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    let user_hook = "#!/bin/sh\ncat >/dev/null\necho user-push-hook-ran >&2\nexit 0\n";
+    std::fs::write(hooks_dir.join("pre-push"), user_hook).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(hooks_dir.join("pre-push"))
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(hooks_dir.join("pre-push"), perms).unwrap();
+    }
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--push"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --push");
+    assert!(lock_out.status.success());
+    assert!(hooks_dir.join("pre-push.gitkit-orig").exists());
+
+    let unlock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let restored = std::fs::read_to_string(hooks_dir.join("pre-push")).unwrap();
+    assert_eq!(restored, user_hook);
+    assert!(!hooks_dir.join("pre-push.gitkit-orig").exists());
+
+    // The restored user hook still runs on push.
+    let (ok, msg) = git_push_head(dir.path());
+    assert!(ok);
+    assert!(msg.contains("user-push-hook-ran"), "message was: {msg}");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `lock status --json` integration tests
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Exit-code assertions live here (real subprocess) rather than in the crate's
+// unit tests, since `lock status --json` calls `process::exit` and running
+// that in-process would kill the test binary.
+
+#[test]
+fn lock_status_json_exit_code_zero_when_unlocked() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when no lock is active"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"expired\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"operations\":[]"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"locked_at\":null"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_nonzero_when_locked() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--reason", "agent session"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when a lock is active"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":true"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"reason\":\"agent session\""),
+        "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"operations\":[\"commit\"]"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_zero_when_expired() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(
+        &lock_path,
+        r#"{"locked_at":"2000-01-01T00:00:00Z","expires_at":"2000-01-01T00:01:00Z","reason":"stale","operations":["commit"]}"#,
+    )
+    .unwrap();
+
+    let out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when the lock has expired"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+    assert!(stdout.contains("\"expired\":true"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("\"operations\":[\"commit\"]"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn lock_status_json_exit_code_zero_when_malformed() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    std::fs::write(&lock_path, "not json at all {{{").unwrap();
+
+    let out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status --json");
+
+    assert!(
+        out.status.success(),
+        "a malformed lock file must report unlocked, not fail the caller"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
+}
+
+#[test]
+fn lock_status_json_works_from_a_subdirectory() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let subdir = dir.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    let out = Command::new(&binary)
+        // Never let a test hit the network via the update check.
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status", "--json"])
+        .current_dir(&subdir)
+        .output()
+        .expect("Failed to run gitkit lock status --json from a subdirectory");
+
+    assert!(!out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"active\":true"), "stdout was: {stdout}");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// no-invisibles integration tests (real git repo, real git commit, hook
+// script execs back into the built `gitkit` binary — unlike the other
+// builtins, which are pure `sh`)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Prepends the directory holding the built `gitkit` binary to `PATH`, so
+/// the installed `no-invisibles` hook's `exec gitkit hooks scan-invisibles`
+/// can find it when git runs the hook as a subprocess.
+fn path_with_gitkit_dir(binary: &std::path::Path) -> std::ffi::OsString {
+    let bin_dir = binary.parent().unwrap();
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![bin_dir.to_path_buf()];
+    paths.extend(std::env::split_paths(&existing));
+    std::env::join_paths(paths).unwrap()
+}
+
+fn git_commit_with_path(
+    dir: &std::path::Path,
+    msg: &str,
+    path: &std::ffi::OsStr,
+) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["commit", "-m", msg])
+        .env("PATH", path)
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git commit");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `status --strict` / `status --repair` integration tests (real subprocess)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Exit-code assertions live here rather than in the crate's unit tests, since
+// `status --strict` calls `process::exit` when a dormant hook is found, and
+// running that in-process would kill the test binary (same rationale as the
+// `lock status --json` tests above).
+
+#[test]
+fn status_strict_exits_nonzero_when_a_hook_is_dormant() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+
+    let binary = gitkit_binary();
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["hooks", "add", "no-secrets", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add");
+    assert!(install_out.status.success());
+
+    // Simulate the exact regression this spec exists to catch: a hook file
+    // that is present and correct but was never marked executable.
+    let hook_path = hooks_dir.join("pre-commit");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&hook_path, perms).unwrap();
+    }
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict");
+
+    #[cfg(unix)]
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when a hook is dormant"
+    );
+    #[cfg(not(unix))]
+    assert!(
+        out.status.success(),
+        "the executable bit does not apply on non-Unix targets"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("dormant"), "stdout was: {stdout}");
+}
+
+#[test]
+fn status_strict_exits_zero_with_no_dormant_hooks() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
+    let binary = gitkit_binary();
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 when nothing is dormant"
+    );
+}
+
+#[test]
+fn status_repair_sets_executable_bit_and_strict_then_passes() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+    let binary = gitkit_binary();
+
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["hooks", "add", "no-secrets", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add");
+    assert!(install_out.status.success());
+
+    let hook_path = hooks_dir.join("pre-commit");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&hook_path, perms).unwrap();
+    }
+
+    let repair_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status", "--repair"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --repair");
+    assert!(repair_out.status.success());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        assert!(
+            perms.mode() & 0o111 != 0,
+            "repair should have set the executable bit"
+        );
+    }
+
+    let strict_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status", "--strict"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status --strict after repair");
+    assert!(
+        strict_out.status.success(),
+        "repaired hook must no longer be dormant"
+    );
+}
+
+#[test]
+fn no_invisibles_fixture_blocks_zero_width_space_then_accepts_clean_commit() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+    let path = path_with_gitkit_dir(&binary);
+
+    // Baseline commit (README.md staged by init_git_repo) succeeds with no
+    // hook installed yet.
+    let (ok, _) = git_commit_with_path(dir.path(), "initial commit", &path);
+    assert!(ok, "baseline commit should succeed");
+
+    let install_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["hooks", "add", "no-invisibles", "--yes", "--force"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit hooks add no-invisibles");
+    assert!(
+        install_out.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&install_out.stderr)
+    );
+
+    // Stage a line carrying a zero-width space: the commit must be refused,
+    // naming file, line, column and codepoint.
+    std::fs::write(dir.path().join("README.md"), "hello\nhidden\u{200B}space\n").unwrap();
+    Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+
+    let (ok, msg) = git_commit_with_path(dir.path(), "smuggled watermark", &path);
+    assert!(!ok, "commit carrying a ZWSP should be refused: {msg}");
+    assert!(msg.contains("README.md:2:7"), "message was: {msg}");
+    assert!(msg.contains("U+200B"), "message was: {msg}");
+    assert!(msg.contains("ZERO WIDTH SPACE"), "message was: {msg}");
+
+    // Remove the character: the commit now succeeds.
+    std::fs::write(dir.path().join("README.md"), "hello\nclean space\n").unwrap();
+    Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+
+    let (ok, msg) = git_commit_with_path(dir.path(), "cleaned up", &path);
+    assert!(ok, "clean commit should pass silently: {msg}");
+}
+
+// ── GK-A: composition — `gitkit status` lists every composed builtin ───────
+
+#[test]
+fn status_lists_both_builtins_installed_for_one_git_hook() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).unwrap();
+    let binary = gitkit_binary();
+
+    for builtin in ["conventional-commits", "no-body"] {
+        let install_out = Command::new(&binary)
+            .env("GITKIT_NO_UPDATE_CHECK", "1")
+            .env("HOME", dir.path())
+            .args(["hooks", "add", builtin, "--yes", "--force"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap_or_else(|_| panic!("Failed to run gitkit hooks add {builtin}"));
+        assert!(install_out.status.success());
+    }
+
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit status");
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("conventional-commits"),
+        "status output was:\n{stdout}"
+    );
+    assert!(stdout.contains("no-body"), "status output was:\n{stdout}");
 }

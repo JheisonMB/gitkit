@@ -1,0 +1,141 @@
+//! Update check: looks for a newer GitHub release and, on confirmation,
+//! hands off to [`install`] to replace the running binary.
+//!
+//! Called once from `main`, before any subcommand runs — gitkit's own
+//! binary is never invoked from inside a git hook (the hooks it installs
+//! are plain POSIX `sh` scripts), so this is never on a hook path.
+//! Every failure here returns silently: a version check must never
+//! interrupt the user's actual work.
+
+use std::io::IsTerminal;
+use std::time::Duration;
+
+use serde::Deserialize;
+
+mod install;
+
+const GITHUB_REPO: &str = "UniverLab/gitkit";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+}
+
+/// Entry point. Opt out with `GITKIT_NO_UPDATE_CHECK` (any value).
+pub fn check_for_update() {
+    if update_check_disabled(std::env::var("GITKIT_NO_UPDATE_CHECK").ok()) {
+        return;
+    }
+
+    let Some(latest) = fetch_latest_tag() else {
+        return;
+    };
+
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    if !is_newer(&current, &latest) {
+        return;
+    }
+
+    // A confirm prompt in a script or CI would hang it — skip straight past.
+    if !std::io::stdin().is_terminal() {
+        return;
+    }
+
+    println!("  \x1b[33m⬆  Update available:\x1b[0m {current} → {latest}");
+    let Ok(install) = inquire::Confirm::new("Install now?")
+        .with_default(true)
+        .prompt()
+    else {
+        return;
+    };
+    if !install {
+        println!();
+        return;
+    }
+
+    install::run(&latest);
+}
+
+fn fetch_latest_tag() -> Option<String> {
+    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
+    let resp = ureq::get(&url)
+        .timeout(HTTP_TIMEOUT)
+        .set("User-Agent", "gitkit-autoupdate")
+        .call()
+        .ok()?;
+    let body = resp.into_string().ok()?;
+    let release: GithubRelease = serde_json::from_str(&body).ok()?;
+    if release.tag_name.is_empty() {
+        return None;
+    }
+    Some(release.tag_name)
+}
+
+fn update_check_disabled(opt_out: Option<String>) -> bool {
+    opt_out.is_some()
+}
+
+fn is_newer(current: &str, latest: &str) -> bool {
+    let parse = |v: &str| -> (u64, u64, u64) {
+        let v = v.trim_start_matches('v');
+        let p: Vec<u64> = v.split('.').filter_map(|s| s.parse().ok()).collect();
+        (
+            *p.first().unwrap_or(&0),
+            *p.get(1).unwrap_or(&0),
+            *p.get(2).unwrap_or(&0),
+        )
+    };
+    parse(latest) > parse(current)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_newer_minor_version() {
+        assert!(is_newer("v0.9.0", "v0.10.0"));
+    }
+
+    #[test]
+    fn is_newer_major_version() {
+        assert!(is_newer("v0.99.99", "v1.0.0"));
+    }
+
+    #[test]
+    fn is_newer_equal_versions_not_newer() {
+        assert!(!is_newer("v0.4.0", "v0.4.0"));
+    }
+
+    #[test]
+    fn is_newer_older_is_not_newer() {
+        assert!(!is_newer("v1.0.0", "v0.9.0"));
+    }
+
+    #[test]
+    fn is_newer_handles_missing_v_prefix_on_current() {
+        assert!(is_newer("0.4.0", "v0.5.0"));
+    }
+
+    #[test]
+    fn is_newer_handles_missing_v_prefix_on_latest() {
+        assert!(is_newer("v0.4.0", "0.5.0"));
+    }
+
+    #[test]
+    fn is_newer_handles_missing_v_prefix_on_both() {
+        assert!(is_newer("0.4.0", "0.5.0"));
+    }
+
+    #[test]
+    fn update_check_disabled_when_var_is_set() {
+        assert!(update_check_disabled(Some(String::new())));
+        assert!(update_check_disabled(Some("1".to_string())));
+    }
+
+    #[test]
+    fn update_check_not_disabled_when_var_is_absent() {
+        assert!(!update_check_disabled(None));
+    }
+}

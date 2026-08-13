@@ -262,10 +262,40 @@ pub(crate) fn apply_build(build: &Build) -> Result<()> {
     Ok(())
 }
 
+/// Signals that `save` refused to overwrite an existing build, as opposed to
+/// any other failure (I/O, serialization, ...). Callers that want to offer a
+/// retry — the init wizard — distinguish on this type rather than the
+/// message text, which stays user-facing and stable for the CLI path.
+#[derive(Debug)]
+pub(crate) struct BuildNameCollision {
+    pub name: String,
+}
+
+impl std::fmt::Display for BuildNameCollision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Build '{}' already exists. Delete it first or choose another name.",
+            self.name
+        )
+    }
+}
+
+impl std::error::Error for BuildNameCollision {}
+
+/// Classifies a `save` failure as a name collision (retryable with a new
+/// name or an explicit overwrite) versus anything else (not retryable).
+pub(crate) fn is_build_name_collision(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BuildNameCollision>().is_some()
+}
+
 pub(crate) fn save(name: &str, description: Option<&str>) -> Result<()> {
     let path = build_path(name)?;
     if path.exists() {
-        anyhow::bail!("Build '{name}' already exists. Delete it first or choose another name.");
+        return Err(BuildNameCollision {
+            name: name.to_string(),
+        }
+        .into());
     }
 
     let build = capture_current_config(name, description)?;
@@ -278,6 +308,17 @@ pub(crate) fn save(name: &str, description: Option<&str>) -> Result<()> {
 
     println!("  ✓ Build '{name}' saved to {}", path.display());
     Ok(())
+}
+
+/// Replaces an existing build: deletes the current file, then saves fresh.
+/// Used only where the caller has explicit confirmation to overwrite (the
+/// init wizard's collision re-prompt) — never invoked silently.
+pub(crate) fn save_overwrite(name: &str, description: Option<&str>) -> Result<()> {
+    let path = build_path(name)?;
+    if path.exists() {
+        fs::remove_file(&path).context("Failed to delete existing build file")?;
+    }
+    save(name, description)
 }
 
 pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> Result<Build> {
@@ -298,6 +339,24 @@ pub(crate) fn capture_current_config(name: &str, description: Option<&str>) -> R
                     continue;
                 }
                 let content = fs::read_to_string(&path).unwrap_or_default();
+
+                let parts = crate::hooks::list_parts(&hooks_dir, &hook_name);
+                if crate::hooks::is_dispatcher(&content, &hook_name) || !parts.is_empty() {
+                    // Capture recognized parts even if the top-level file no
+                    // longer matches the dispatcher gitkit installed — a hand
+                    // replacement of the dispatcher must not hide builtins
+                    // still installed underneath it in gitkit.d/.
+                    for part_name in parts {
+                        if let Some(b) = crate::hooks::builtins::get(&part_name) {
+                            builtins.push(b.name.to_string());
+                        }
+                        // The preserved pre-existing hook (if any) is
+                        // intentionally not captured: builds only replay
+                        // gitkit-managed configuration.
+                    }
+                    continue;
+                }
+
                 if let Some(b) = crate::hooks::detect_builtin(&hook_name, &content) {
                     builtins.push(b.name.to_string());
                 } else if crate::hooks::valid_hook_names().contains(&hook_name.as_str()) {
@@ -1248,8 +1307,67 @@ description = ""
         let _ = save("test-dup", None);
         let result = save("test-dup", None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("already exists"));
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+        assert!(is_build_name_collision(&err));
         let _ = std::fs::remove_file(builds_dir().unwrap().join("test-dup.toml"));
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn permission_style_failure_is_not_a_collision() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let err: anyhow::Error = anyhow::Error::new(io_err).context("Failed to write build file");
+        assert!(!is_build_name_collision(&err));
+    }
+
+    #[serial]
+    #[test]
+    fn save_duplicate_leaves_existing_file_byte_identical() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let _ = save("test-dup-bytes", Some("original description"));
+        let path = builds_dir().unwrap().join("test-dup-bytes.toml");
+        let before = std::fs::read(&path).unwrap();
+
+        let result = save("test-dup-bytes", Some("attempted overwrite"));
+        assert!(result.is_err());
+
+        let after = std::fs::read(&path).unwrap();
+        assert_eq!(before, after);
+        let _ = std::fs::remove_file(&path);
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn save_overwrite_replaces_build_content() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let _ = save("test-overwrite", Some("first description"));
+
+        let result = save_overwrite("test-overwrite", Some("second description"));
+        assert!(result.is_ok());
+
+        let loaded = load_build("test-overwrite").unwrap();
+        assert_eq!(loaded.description, "second description");
+        let _ = std::fs::remove_file(builds_dir().unwrap().join("test-overwrite.toml"));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
@@ -1365,6 +1483,63 @@ description = ""
             let content = std::fs::read_to_string(&hook_path).unwrap();
             assert!(content.contains("#!/bin/sh"));
         }
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn apply_build_with_two_builtins_on_one_hook_installs_both_as_parts() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let build = Build {
+            name: "test".to_string(),
+            description: "".to_string(),
+            hooks: HooksConfig {
+                builtins: vec!["conventional-commits".to_string(), "no-body".to_string()],
+                custom: Vec::new(),
+            },
+            gitignore: GitignoreConfig::default(),
+            gitattributes: GitattributesConfig::default(),
+            config: ConfigBuild::default(),
+        };
+        apply_build(&build).unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        let parts = hooks_dir.join("gitkit.d").join("commit-msg");
+        assert!(parts.join("conventional-commits").exists());
+        assert!(parts.join("no-body").exists());
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn capture_current_config_captures_every_composed_builtin_on_one_hook() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        crate::hooks::install_builtin("conventional-commits", true).unwrap();
+        crate::hooks::install_builtin("no-body", true).unwrap();
+
+        let build = capture_current_config("test", None).unwrap();
+        assert!(build
+            .hooks
+            .builtins
+            .contains(&"conventional-commits".to_string()));
+        assert!(build.hooks.builtins.contains(&"no-body".to_string()));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }

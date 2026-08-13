@@ -17,7 +17,12 @@ Running `gitkit` with no command starts the interactive wizard.
 | Command | Description |
 |---|---|
 | `gitkit` / `gitkit init` | Interactive wizard to configure the repo |
-| `gitkit status` | Show current configuration status |
+| `gitkit status` | Show current configuration status, including per-hook health |
+| `gitkit status --repair` | Set the executable bit on every dormant hook |
+| `gitkit status --strict` | Exit non-zero if any hook is dormant (for CI) |
+| `gitkit status --global` | Machine-wide: every repo gitkit has touched, health read from disk |
+| `gitkit status --global --prune` | Also remove registry entries whose repo no longer exists |
+| `gitkit status --scan <DIR>` | Discover repos with gitkit hooks under DIR and register them |
 | `gitkit clone <repo> [dir]` | Clone a repository and run the wizard |
 | `gitkit clone -b <branch> <repo>` | Clone a specific branch |
 
@@ -31,6 +36,22 @@ Running `gitkit` with no command starts the interactive wizard.
 | `gitkit hooks list --available` | Show all built-in hooks with descriptions |
 | `gitkit hooks remove <hook>` | Remove an installed hook |
 | `gitkit hooks show <hook>` | Print hook content |
+
+## Lock
+
+| Command | Description |
+|---|---|
+| `gitkit lock` | Block commits until `gitkit unlock` |
+| `gitkit lock --reason <msg>` | Set the message shown on a blocked commit |
+| `gitkit lock --timeout <duration>` | Auto-expire the lock, e.g. `30m`, `2h` |
+| `gitkit lock --push` | Also block pushes (in addition to commits) |
+| `gitkit lock --all` | Block both commits and pushes |
+| `gitkit lock status` | Show whether a lock is active, its reason and expiry |
+| `gitkit lock status --json` | Show lock status as machine-readable JSON with exit code signal |
+| `gitkit unlock` | Remove the lock and restore any backed-up hook |
+
+`git commit --no-verify` and `git push --no-verify` bypass the lock — see [Lock](lock.md) for why
+that is accepted rather than defended against.
 
 ## Ignore
 

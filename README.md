@@ -19,6 +19,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2E8B57?style=for-the-badge" alt="License"/></a>
 </p>
 
+<p align="center">
+  <strong><a href="https://univerlab.org/gitkit">Visit the website</a></strong>
+</p>
+
 Set up a git repo the way you actually work — one guided flow for hooks, `.gitignore`, `.gitattributes`, and git config. One binary, no Node.js, no Python, no runtime dependencies.
 
 ---
@@ -38,6 +42,8 @@ Set up a git repo the way you actually work — one guided flow for hooks, `.git
 - **🧩 Ignore and attribute presets** — Browse built-in and gitignore.io templates, then apply line-ending or binary presets.
 - **⚙️ Curated git config** — Apply practical presets with `--global` or `--local` scope, with idempotency detection.
 - **💾 Save & reuse builds** — Save configurations and apply them to any project with one command.
+- **🔒 Repository locks** — Block commits and pushes during agent sessions with `gitkit lock` / `gitkit unlock` — useful when autonomous agents are editing the repo.
+- **⬆️ Version check & self-update** — Automatic check for new releases with optional auto-update; disable with `GITKIT_NO_UPDATE_CHECK`.
 - **📦 Single binary** — No Node.js, no Python, no extra runtime.
 
 ---
@@ -298,6 +304,7 @@ Run `gitkit hooks list --available` to see these without leaving the terminal.
 | Name | Hook | Description |
 |---|---|---|
 | `conventional-commits` | `commit-msg` | Validates Conventional Commits format |
+| `no-trailers` | `commit-msg` | Rejects commit messages carrying AI attribution trailers |
 | `no-secrets` | `pre-commit` | Detects common secret patterns in staged changes |
 | `branch-naming` | `pre-commit` | Validates branch name matches convention |
 

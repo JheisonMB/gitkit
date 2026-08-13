@@ -57,8 +57,8 @@ gitkit status
 
 ```
 Hooks:
-  ✓ conventional-commits (commit-msg)
-  ✓ custom: pre-push → "cargo test"
+  ✓ conventional-commits (commit-msg) — active
+  ~ pre-push — modified: "cargo test"
 
 .gitignore:
   ✓ 14 patterns
@@ -71,6 +71,21 @@ Git config (global):
   ✓ help.autocorrect = prompt
   ✓ diff.algorithm = histogram
 ```
+
+Each hook is reported as **active** (installed, executable, git runs it),
+**dormant** (installed but not executable — git silently ignores it),
+**modified** (content doesn't match a built-in, e.g. a custom command or a
+hand-edited script), or simply absent from the list if nothing is installed
+for that hook. Fix a dormant hook with:
+
+```bash
+gitkit status --repair   # sets the executable bit on every dormant hook
+gitkit status --strict   # exits non-zero if any hook is dormant (for CI)
+```
+
+`--repair` only touches dormant hooks — it never rewrites content, and it
+never installs a hook that was removed on purpose. See
+[hooks.md](hooks.md#hook-health) for details.
 
 When you are happy with a setup, [save it as a build](builds.md) and apply
 it to every future project with one command.
