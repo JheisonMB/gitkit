@@ -29,7 +29,7 @@ Set up a git repo the way you actually work — one guided flow for hooks, `.git
 
 ### Demo
 
-![Demo](assets/demo.gif)
+![Demo](demo/dist/demo.gif)
 
 ---
 
