@@ -5,6 +5,7 @@ use std::{fs, path::Path};
 use crate::utils::{confirm, find_repo_root};
 
 pub(crate) mod builtins;
+mod message_rules;
 mod no_invisibles;
 
 #[derive(Subcommand)]
@@ -51,6 +52,13 @@ pub enum HooksCommand {
     /// `no-invisibles` pre-commit hook; not meant to be run directly.
     #[command(hide = true)]
     ScanInvisibles,
+    /// Internal: evaluate commit message against user-defined rules. Execed
+    /// by the `message-rules` commit-msg hook; not meant to be run directly.
+    #[command(hide = true)]
+    ScanMessageRules {
+        /// Path to the commit message file (passed by git)
+        msg_file: String,
+    },
 }
 
 pub fn run(cmd: HooksCommand) -> Result<()> {
@@ -66,6 +74,9 @@ pub fn run(cmd: HooksCommand) -> Result<()> {
         HooksCommand::Remove { hook, yes, dry_run } => remove(&hook, yes, dry_run),
         HooksCommand::Show { hook } => show(&hook),
         HooksCommand::ScanInvisibles => no_invisibles::run(),
+        HooksCommand::ScanMessageRules { msg_file } => {
+            message_rules::evaluate_message(std::path::Path::new(&msg_file))
+        }
     }
 }
 
@@ -217,12 +228,17 @@ fn ensure_dispatcher(dir: &Path, hook_name: &str) -> Result<()> {
 
             if let Some(builtin) = detect_builtin(hook_name, &content) {
                 let migrated_path = parts.join(builtin.name);
-                let is_outdated = content.trim() != builtin.script.trim();
+                let current_script = if builtin.name == "message-rules" {
+                    message_rules::generate_script()
+                } else {
+                    builtin.script.to_owned()
+                };
+                let is_outdated = content.trim() != current_script.trim();
                 if is_outdated {
                     println!("Updating outdated builtin: {}", builtin.name);
                 }
                 if !migrated_path.exists() || is_outdated {
-                    fs::write(&migrated_path, builtin.script).with_context(|| {
+                    fs::write(&migrated_path, &current_script).with_context(|| {
                         format!("Failed to migrate builtin '{}' into gitkit.d", builtin.name)
                     })?;
                     set_executable(&migrated_path)?;
@@ -324,6 +340,8 @@ pub(crate) fn classify_part(dir: &Path, hook_name: &str, part_name: &str) -> Res
     let recognized = match std::str::from_utf8(&bytes) {
         Ok(content) => {
             part_name == PRESERVED_PART_NAME
+                || (part_name == "message-rules"
+                    && content.contains("# gitkit-builtin: message-rules"))
                 || builtins::get(part_name).is_some_and(|b| content.trim() == b.script.trim())
         }
         Err(_) => false,
@@ -414,9 +432,16 @@ fn add_builtin_part(
     let dir = hooks_dir()?;
     let part_path = parts_dir(&dir, builtin.hook).join(builtin.name);
 
+    let script = if builtin.name == "message-rules" {
+        let _rules = message_rules::validate_rules()?;
+        message_rules::generate_script()
+    } else {
+        builtin.script.to_owned()
+    };
+
     if part_path.exists() && !force {
         let existing = fs::read_to_string(&part_path).unwrap_or_default();
-        if existing.trim() != builtin.script.trim()
+        if existing.trim() != script.trim()
             && !confirm(
                 &format!("Hook '{}' already exists. Overwrite?", builtin.name),
                 yes,
@@ -428,14 +453,11 @@ fn add_builtin_part(
     }
 
     if dry_run {
-        println!(
-            "[dry-run] Would write hook '{}':\n{}",
-            builtin.hook, builtin.script
-        );
+        println!("[dry-run] Would write hook '{}':\n{}", builtin.hook, script);
         return Ok(());
     }
 
-    install_part(builtin.hook, builtin.name, builtin.script)?;
+    install_part(builtin.hook, builtin.name, &script)?;
     record_applied(builtin.name);
     println!("Installed hook '{}'.", builtin.hook);
     Ok(())
@@ -449,7 +471,13 @@ fn add_quiet(hook_or_builtin: &str, command: Option<&str>, force: bool) -> Resul
             "'{hook_or_builtin}' is a built-in hook — no command needed"
         );
         let _ = force;
-        install_part(builtin.hook, builtin.name, builtin.script)?;
+        let script = if builtin.name == "message-rules" {
+            let _rules = message_rules::validate_rules()?;
+            message_rules::generate_script()
+        } else {
+            builtin.script.to_owned()
+        };
+        install_part(builtin.hook, builtin.name, &script)?;
         record_applied(builtin.name);
         return Ok(());
     }
@@ -483,7 +511,13 @@ fn resolve_hook<'a>(hook_or_builtin: &'a str, command: Option<&str>) -> Result<(
             command.is_none(),
             "'{hook_or_builtin}' is a built-in hook — no command needed"
         );
-        return Ok((builtin.hook, builtin.script.to_owned()));
+        let script = if builtin.name == "message-rules" {
+            let _rules = message_rules::validate_rules()?;
+            message_rules::generate_script()
+        } else {
+            builtin.script.to_owned()
+        };
+        return Ok((builtin.hook, script));
     }
 
     let cmd = command.ok_or_else(|| {
@@ -764,6 +798,9 @@ mod tests {
     #[test]
     fn resolve_hook_all_builtins_resolvable() {
         for b in available_builtins() {
+            if b.name == "message-rules" {
+                continue;
+            }
             let result = resolve_hook(b.name, None);
             assert!(result.is_ok(), "Failed to resolve builtin: {}", b.name);
             let (hook, script) = result.unwrap();
