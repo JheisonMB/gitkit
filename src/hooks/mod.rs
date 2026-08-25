@@ -89,9 +89,33 @@ pub(crate) fn valid_hook_names() -> &'static [&'static str] {
     VALID_HOOKS
 }
 
-/// Identifies which built-in (if any) an installed hook file corresponds to,
-/// by exact script comparison. Built-ins are written verbatim on install.
+/// Extracts the builtin identity marker from script content, if present.
+/// The marker is a shell comment line of the form `# gitkit-builtin: <name>`.
+fn extract_marker(content: &str) -> Option<&str> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(name) = trimmed.strip_prefix("# gitkit-builtin: ") {
+            let name = name.trim();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// Identifies which built-in (if any) an installed hook file corresponds to.
+/// First tries the machine-readable marker (`# gitkit-builtin: <name>`), which
+/// survives script changes across versions. Falls back to exact-content match
+/// so hooks installed by pre-marker versions of gitkit keep being recognised.
 pub(crate) fn detect_builtin(hook_file: &str, content: &str) -> Option<&'static builtins::Builtin> {
+    if let Some(name) = extract_marker(content) {
+        if let Some(b) = builtins::get(name) {
+            if b.hook == hook_file {
+                return Some(b);
+            }
+        }
+    }
     builtins::ALL
         .iter()
         .find(|b| b.hook == hook_file && content.trim() == b.script.trim())
@@ -176,8 +200,9 @@ pub(crate) fn list_parts(hooks_dir: &Path, hook_name: &str) -> Vec<String> {
 
 /// Ensures `.git/hooks/<hook_name>` is a gitkit dispatcher, migrating any
 /// pre-existing content into `gitkit.d/<hook_name>/` as a part first:
-/// - if it's a script matching a known builtin verbatim (the pre-composition
-///   damaged shape), it's absorbed under that builtin's name.
+/// - if it's a known builtin (by marker or exact content match), it's absorbed
+///   under that builtin's name with the **current** script — so an outdated
+///   builtin is replaced, not frozen as an untouchable hand-written hook.
 /// - otherwise (a hand-written hook) it's absorbed as [`PRESERVED_PART_NAME`].
 ///
 /// A no-op if the dispatcher is already in place.
@@ -189,15 +214,27 @@ fn ensure_dispatcher(dir: &Path, hook_name: &str) -> Result<()> {
         let content = fs::read_to_string(&hook_path).unwrap_or_default();
         if !is_dispatcher(&content, hook_name) {
             fs::create_dir_all(&parts).context("Failed to create gitkit.d parts directory")?;
-            let migrated_name = detect_builtin(hook_name, &content)
-                .map(|b| b.name.to_string())
-                .unwrap_or_else(|| PRESERVED_PART_NAME.to_string());
-            let migrated_path = parts.join(&migrated_name);
-            if !migrated_path.exists() {
-                fs::write(&migrated_path, &content).with_context(|| {
-                    format!("Failed to migrate existing '{hook_name}' hook into gitkit.d")
-                })?;
-                set_executable(&migrated_path)?;
+
+            if let Some(builtin) = detect_builtin(hook_name, &content) {
+                let migrated_path = parts.join(builtin.name);
+                let is_outdated = content.trim() != builtin.script.trim();
+                if is_outdated {
+                    println!("Updating outdated builtin: {}", builtin.name);
+                }
+                if !migrated_path.exists() || is_outdated {
+                    fs::write(&migrated_path, builtin.script).with_context(|| {
+                        format!("Failed to migrate builtin '{}' into gitkit.d", builtin.name)
+                    })?;
+                    set_executable(&migrated_path)?;
+                }
+            } else {
+                let migrated_path = parts.join(PRESERVED_PART_NAME);
+                if !migrated_path.exists() {
+                    fs::write(&migrated_path, &content).with_context(|| {
+                        format!("Failed to migrate existing '{hook_name}' hook into gitkit.d")
+                    })?;
+                    set_executable(&migrated_path)?;
+                }
             }
         }
     } else {
@@ -581,11 +618,14 @@ pub(crate) enum HookHealth {
 }
 
 /// Classifies an installed hook file's health for `gitkit status`, by
-/// comparing its content against the builtin catalogue via [`detect_builtin`].
-/// Reads the file itself rather than trusting a caller-supplied string, so
-/// non-UTF-8 content is classified `Modified` instead of erroring — git runs
-/// a hook regardless of its encoding, so an unreadable-as-text file is not a
-/// failure, just content gitkit can't match against a builtin.
+/// comparing its content against the builtin catalogue via exact-content
+/// match. A hook with a marker but hand-edited content is `Modified`, not
+/// `Active` — health reporting cares about byte-identical content, not
+/// identity. Reads the file itself rather than trusting a caller-supplied
+/// string, so non-UTF-8 content is classified `Modified` instead of
+/// erroring — git runs a hook regardless of its encoding, so an
+/// unreadable-as-text file is not a failure, just content gitkit can't
+/// match against a builtin.
 pub(crate) fn classify_hook(hook_name: &str, path: &Path) -> Result<HookHealth> {
     if !path.exists() {
         return Ok(HookHealth::Absent);
@@ -593,7 +633,9 @@ pub(crate) fn classify_hook(hook_name: &str, path: &Path) -> Result<HookHealth> 
 
     let bytes = fs::read(path).with_context(|| format!("Failed to read hook '{hook_name}'"))?;
     let is_builtin = match std::str::from_utf8(&bytes) {
-        Ok(content) => detect_builtin(hook_name, content).is_some(),
+        Ok(content) => builtins::ALL
+            .iter()
+            .any(|b| b.hook == hook_name && content.trim() == b.script.trim()),
         Err(_) => false,
     };
 
@@ -1797,6 +1839,88 @@ mod tests {
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    // ── GK-E: outdated builtin recognition ─────────────────────────────────
+
+    #[test]
+    fn detect_builtin_by_marker_with_stale_content() {
+        let stale = "#!/bin/sh\n# gitkit-builtin: no-trailers\necho old-version\n";
+        let detected = detect_builtin("commit-msg", stale);
+        assert!(
+            detected.is_some(),
+            "marker must identify the builtin even with stale content"
+        );
+        assert_eq!(detected.unwrap().name, "no-trailers");
+    }
+
+    #[serial]
+    #[test]
+    fn installing_over_outdated_builtin_replaces_it_without_preserving() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(
+            hooks_dir.join("commit-msg"),
+            "#!/bin/sh\n# gitkit-builtin: no-trailers\necho old-version\n",
+        )
+        .unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        install_builtin("conventional-commits", true).unwrap();
+
+        let parts = list_parts(&hooks_dir, "commit-msg");
+        assert!(
+            !parts.contains(&PRESERVED_PART_NAME.to_string()),
+            "outdated builtin must not be preserved as 00-preexisting: {parts:?}"
+        );
+        assert!(parts.contains(&"no-trailers".to_string()));
+        assert!(parts.contains(&"conventional-commits".to_string()));
+
+        let nt_content = std::fs::read_to_string(
+            hooks_dir
+                .join("gitkit.d")
+                .join("commit-msg")
+                .join("no-trailers"),
+        )
+        .unwrap();
+        let current_nt = builtins::get("no-trailers").unwrap();
+        assert_eq!(nt_content, current_nt.script);
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn detect_builtin_exact_content_fallback_for_markerless_script() {
+        let no_secrets = builtins::get("no-secrets").unwrap();
+        let detected = detect_builtin("pre-commit", no_secrets.script);
+        assert!(
+            detected.is_some(),
+            "byte-identical script must still be detected"
+        );
+        assert_eq!(detected.unwrap().name, "no-secrets");
+    }
+
+    #[test]
+    fn every_builtin_carries_a_marker_matching_its_name() {
+        for b in builtins::ALL {
+            let marker = extract_marker(b.script);
+            assert!(
+                marker.is_some(),
+                "builtin '{}' is missing its marker comment",
+                b.name
+            );
+            assert_eq!(
+                marker.unwrap(),
+                b.name,
+                "builtin '{}' has marker for '{}' instead",
+                b.name,
+                marker.unwrap()
+            );
         }
     }
 }

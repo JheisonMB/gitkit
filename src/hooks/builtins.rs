@@ -69,6 +69,7 @@ esac
 
 const CONVENTIONAL_COMMITS: &str = concat!(
     r#"#!/bin/sh
+# gitkit-builtin: conventional-commits
 # Validates only the first line (the subject). grep matches line-by-line, so
 # without this the whole message would pass if ANY line looked conventional,
 # not just the first.
@@ -100,6 +101,7 @@ fi
 pub(crate) const AI_VENDOR_NOREPLY_ADDRESSES: &[&str] = &["noreply@anthropic.com"];
 
 const NO_TRAILERS: &str = r#"#!/bin/sh
+# gitkit-builtin: no-trailers
 # Rejects commit messages carrying AI attribution trailers: a Co-Authored-By,
 # Assisted-By or AI-Assisted-By line naming a known AI vendor no-reply
 # address, a Claude-Session line, or a "Generated with" line. Genuine human
@@ -120,6 +122,7 @@ fi
 "#;
 
 const NO_SECRETS: &str = r#"#!/bin/sh
+# gitkit-builtin: no-secrets
 # Detects common secret patterns. Not exhaustive — use dedicated tools for production.
 patterns='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|ghp_[0-9A-Za-z]{36}|sk-[0-9A-Za-z]{48}|password\s*=\s*["'"'"'][^"'"'"']{8,})'
 if git diff --cached --diff-filter=ACM | grep -qE "$patterns"; then
@@ -130,6 +133,7 @@ fi
 "#;
 
 const BRANCH_NAMING: &str = r#"#!/bin/sh
+# gitkit-builtin: branch-naming
 branch=$(git symbolic-ref --short HEAD)
 pattern='^(main|master|develop|release/.+|hotfix/.+|feat/.+|feature/.+|fix/.+|chore/.+)$'
 if ! echo "$branch" | grep -qE "$pattern"; then
@@ -147,6 +151,7 @@ fi
 // actual scan lives in `no_invisibles.rs`, is pure Rust std library, and is
 // unit-tested directly there.
 const NO_INVISIBLES: &str = r#"#!/bin/sh
+# gitkit-builtin: no-invisibles
 # Rejects added lines carrying invisible Unicode: zero-width characters,
 # bidi controls (also the "Trojan Source" vector) and Unicode tag
 # characters. Only lines this commit adds are scanned, not the whole file —
@@ -156,6 +161,7 @@ exec gitkit hooks scan-invisibles
 
 const NO_BODY: &str = concat!(
     r#"#!/bin/sh
+# gitkit-builtin: no-body
 # Rejects a commit message with a body. A conforming message is one line,
 # with any number of trailing newlines. The only body this hook allows is a
 # blank line followed by a BREAKING CHANGE:/BREAKING-CHANGE: footer (case
