@@ -65,15 +65,33 @@ the update to maintain consistency.
 
 ## Uninstall
 
+First, remove gitkit's hooks from every repository it has touched:
+
+```bash
+gitkit uninstall
+```
+
+This lists every repository in the registry, shows what hooks are installed, and asks for
+confirmation before removing anything. It restores any hand-written hook that gitkit had absorbed
+when it first installed its dispatcher. Add `--data` to also remove local state under `~/.gitkit`
+(builds, registry).
+
+Then remove the binary itself:
+
 **Linux / macOS:**
 
 ```bash
 rm -f ~/.local/bin/gitkit
-rm -rf ~/.gitkit/   # saved builds (optional)
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\gitkit\gitkit.exe" -Force
+```
+
+If gitkit was installed via `cargo install gitkit`, remove it with:
+
+```bash
+cargo uninstall gitkit
 ```

@@ -536,6 +536,11 @@ skills-lock.json\n";
     #[serial]
     #[test]
     fn add_templates_force_writes_gitignore() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         let original = std::env::current_dir().ok();
@@ -547,11 +552,22 @@ skills-lock.json\n";
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
+        }
     }
 
     #[serial]
     #[test]
     fn add_templates_merge_with_existing_gitignore() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
@@ -565,11 +581,22 @@ skills-lock.json\n";
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
+        }
     }
 
     #[serial]
     #[test]
     fn add_templates_no_existing_gitignore() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         let original = std::env::current_dir().ok();
@@ -580,6 +607,12 @@ skills-lock.json\n";
         assert!(gitignore.contains(".kiro/"));
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
+        }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
         }
     }
 

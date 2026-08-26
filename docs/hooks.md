@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: Built-in hooks (conventional commits, no-body messages, AI trailer rejection, secret detection, branch naming, invisible Unicode detection) and custom shell commands.
+description: Built-in hooks (conventional commits, no-body messages, AI trailer rejection, secret detection, branch naming, invisible Unicode detection, user-defined message rules) and custom shell commands.
 order: 4
 ---
 
@@ -15,6 +15,7 @@ Built-ins are embedded in the binary — no network required.
 | `conventional-commits` | `commit-msg` | Validates Conventional Commits format |
 | `no-body` | `commit-msg` | Rejects a commit message that has a body |
 | `no-trailers` | `commit-msg` | Rejects commit messages carrying AI attribution trailers |
+| `message-rules` | `commit-msg` | Validates commit messages against user-defined regex rules in `.gitmessage-rules.json` |
 | `no-secrets` | `pre-commit` | Detects common secret patterns in staged changes |
 | `branch-naming` | `pre-commit` | Validates branch name matches convention |
 | `no-invisibles` | `pre-commit` | Rejects added lines carrying invisible Unicode characters |
@@ -64,6 +65,98 @@ minimum `noreply@anthropic.com`), a `Claude-Session:` line, or a "Generated
 with" line. Genuine human `Co-Authored-By:` trailers are left untouched — a
 rule in a prompt is advisory, this hook is not. The commit is refused with
 the offending line and its line number; it never rewrites your message.
+
+### `message-rules`
+
+Validates the commit message against **rules you define** in a committed
+file at `.gitmessage-rules.json` in the repository root. Each rule is
+a regex pattern with a direction (`must_match` or `must_not_match`), a
+scope (`subject` or `whole_message`), and a message shown when the rule
+fires. Because the rules file is tracked by git, it travels with the
+repository and applies to everyone who clones it.
+
+#### Configuring rules
+
+Create `.gitmessage-rules.json` in the repository root with a JSON
+array of rules:
+
+```json
+[
+  {
+    "name": "jira-prefix",
+    "pattern": "^[A-Z]+-\\d+",
+    "direction": "must_match",
+    "scope": "subject",
+    "message": "Subject must start with a JIRA ticket prefix (e.g. PROJ-123)"
+  }
+]
+```
+
+A negative rule — forbidding something — uses `must_not_match`:
+
+```json
+[
+  {
+    "name": "no-trailer-in-subject",
+    "pattern": "Co-Authored-By:",
+    "direction": "must_not_match",
+    "scope": "subject",
+    "message": "Subject must not contain trailer lines; move Co-Authored-By to the body"
+  }
+]
+```
+
+Commit this file to the repository so every contributor shares the same
+rules.
+
+#### Directions
+
+- **`must_match`** — the pattern must match the scoped text. A JIRA prefix
+  rule is a positive match: the subject must contain `^[A-Z]+-\d+`.
+- **`must_not_match`** — the pattern must not match. A forbidden-trailer
+  rule is a negative match: the subject must not contain `Co-Authored-By:`.
+  This catches what `no-trailers` misses — a trailer smuggled into the
+  subject line after a semicolon.
+
+#### Scopes
+
+- **`subject`** — only the first line of the commit message is checked.
+- **`whole_message`** — the entire commit message (subject, body, trailers)
+  is checked.
+
+#### Installing
+
+```bash
+gitkit hooks add message-rules
+```
+
+If no rules are configured, the command refuses with a clear message rather
+than installing a hook that always passes. Patterns are validated at install
+time — a regex that does not compile is rejected immediately, naming the
+rule and the compile error, not deferred to commit time.
+
+#### Regex flavour
+
+Patterns use **Rust's `regex` crate** syntax, which is ERE-like: character
+classes, alternation, grouping, anchors, and quantifiers all work. **No
+lookahead, lookbehind, or backreferences** — if a pattern uses these PCRE
+features, it will be rejected at configuration time with a compile error.
+When in doubt, test the pattern with `rg '<pattern>'` (ripgrep uses the
+same engine).
+
+The installed hook delegates to `gitkit` itself for regex evaluation, so
+the same engine that validated the pattern at install time evaluates it at
+commit time — no lossy conversion to POSIX ERE.
+
+#### Multiple rules
+
+All rules run on every commit. The hook reports **every** failing rule, not
+just the first, then exits non-zero. Rules compose — a JIRA prefix rule and
+a subject-length rule are separate rules that fire independently.
+
+Revert (`Revert "..."`), merge (`Merge branch '...'`), `fixup!` and
+`squash!` commit messages are auto-generated and are always accepted
+regardless of rules.
 
 ### `no-invisibles`
 

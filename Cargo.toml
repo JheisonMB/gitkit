@@ -1,6 +1,6 @@
 [package]
 name = "gitkit"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Standalone CLI for configuring git repos — hooks, .gitignore, and .gitattributes"
 license = "MIT"
@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tar = "0.4"
 toml = "0.8"
+regex = "1"
 ureq = "2"
 
 [dev-dependencies]
