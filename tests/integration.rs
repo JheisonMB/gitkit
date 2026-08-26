@@ -1615,3 +1615,46 @@ fn lock_fixture_status_reports_axes() {
     assert!(stdout.contains("Rebase:"), "status was: {stdout}");
     assert!(stdout.contains("Refs:"), "status was: {stdout}");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GK-I: `status --global` summarises gone entries instead of listing each
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn status_global_summarizes_gone_entries_in_one_line() {
+    let home = TempDir::new().unwrap();
+    let gitkit_dir = home.path().join(".gitkit");
+    std::fs::create_dir_all(&gitkit_dir).unwrap();
+
+    let mut registry_content = String::from("[repos]\n");
+    for i in 0..5 {
+        let fake_path = format!("/tmp/gone-repo-{i}");
+        registry_content.push_str(&format!(
+            "[repos.\"{fake_path}\"]\npath = \"{fake_path}\"\napplied_at = \"2026-01-01T00:00:00Z\"\napplied = [\"hook:no-secrets\"]\n"
+        ));
+    }
+    std::fs::write(gitkit_dir.join("registry.toml"), &registry_content).unwrap();
+
+    let binary = gitkit_binary();
+    let out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", home.path())
+        .args(["status", "--global"])
+        .current_dir(home.path())
+        .output()
+        .expect("Failed to run gitkit status --global");
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("5 repositories are gone"),
+        "expected a single summary line for 5 gone entries, stdout was:\n{stdout}"
+    );
+    for i in 0..5 {
+        let fake_path = format!("/tmp/gone-repo-{i}");
+        assert!(
+            !stdout.contains(&fake_path),
+            "stdout must NOT list individual gone entry {fake_path}, stdout was:\n{stdout}"
+        );
+    }
+}

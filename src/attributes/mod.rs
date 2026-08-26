@@ -105,6 +105,7 @@ pub(crate) fn apply_presets(labels: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn make_git_repo() -> TempDir {
@@ -135,6 +136,7 @@ mod tests {
         assert!(PRESET_BINARY.contains("*.png binary"));
     }
 
+    #[serial]
     #[test]
     fn apply_presets_line_endings_writes_content() {
         let dir = make_git_repo();
@@ -146,6 +148,7 @@ mod tests {
         assert!(content.contains("eol=lf"));
     }
 
+    #[serial]
     #[test]
     fn apply_presets_binary_files_writes_content() {
         let dir = make_git_repo();
@@ -157,6 +160,7 @@ mod tests {
         assert!(content.contains("*.png binary"));
     }
 
+    #[serial]
     #[test]
     fn apply_presets_both_presets() {
         let dir = make_git_repo();
@@ -169,6 +173,7 @@ mod tests {
         assert!(content.contains("*.png binary"));
     }
 
+    #[serial]
     #[test]
     fn apply_presets_skips_unknown_labels() {
         let dir = make_git_repo();
@@ -180,6 +185,7 @@ mod tests {
         assert!(content.is_empty());
     }
 
+    #[serial]
     #[test]
     fn apply_presets_does_not_duplicate() {
         let dir = make_git_repo();
@@ -191,6 +197,7 @@ mod tests {
         assert_eq!(content.matches("eol=lf").count(), 1);
     }
 
+    #[serial]
     #[test]
     fn apply_presets_appends_to_existing_content() {
         let dir = make_git_repo();

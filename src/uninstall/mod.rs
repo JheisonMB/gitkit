@@ -300,14 +300,20 @@ mod tests {
     fn with_temp_home<F: FnOnce(&Path)>(f: F) {
         let dir = tempfile::TempDir::new().unwrap();
         let original = std::env::var("HOME").ok();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
         unsafe {
             std::env::set_var("HOME", dir.path());
+            std::env::set_var("GITKIT_HOME", dir.path().join(".gitkit"));
         }
         f(dir.path());
         unsafe {
             match &original {
                 Some(h) => std::env::set_var("HOME", h),
                 None => std::env::remove_var("HOME"),
+            }
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
             }
         }
     }
