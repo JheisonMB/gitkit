@@ -709,6 +709,11 @@ mod tests {
     #[serial]
     #[test]
     fn apply_configs_non_dry_run_in_temp_repo() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::process::Command::new("git")
             .args(["init"])
@@ -719,16 +724,26 @@ mod tests {
         let _ = std::env::set_current_dir(dir.path());
         let single: &[(&str, &str)] = &[("push.autoSetupRemote", "true")];
         let result = apply_configs(single, false, ConfigScope::Local);
-        // May fail if CWD race — just verify no panic
         let _ = result;
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
+        }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
         }
     }
 
     #[serial]
     #[test]
     fn apply_configs_non_dry_run_already_set() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::process::Command::new("git")
             .args(["init"])
@@ -745,11 +760,22 @@ mod tests {
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
         }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
+        }
     }
 
     #[serial]
     #[test]
     fn apply_configs_non_dry_run_multiple_configs() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::process::Command::new("git")
             .args(["init"])
@@ -768,6 +794,12 @@ mod tests {
         let _ = remove_config_key("diff.algorithm", ConfigScope::Local);
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
+        }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
         }
     }
 
@@ -920,6 +952,11 @@ mod tests {
     #[serial]
     #[test]
     fn apply_config_keys_multiple_valid_non_dry_run() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
         let dir = tempfile::TempDir::new().unwrap();
         std::process::Command::new("git")
             .args(["init"])
@@ -937,6 +974,12 @@ mod tests {
         let _ = remove_config_key("diff.algorithm", ConfigScope::Local);
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
+        }
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
         }
     }
 

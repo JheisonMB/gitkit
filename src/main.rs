@@ -13,6 +13,7 @@ mod init;
 mod lock;
 mod registry;
 mod status;
+mod uninstall;
 mod utils;
 
 #[derive(Parser)]
@@ -63,6 +64,8 @@ enum Command {
     Lock(lock::LockArgs),
     /// Remove an active commit/push lock
     Unlock,
+    /// Remove gitkit hooks from every repository it has touched
+    Uninstall(uninstall::UninstallArgs),
 }
 
 fn main() -> Result<()> {
@@ -79,5 +82,6 @@ fn main() -> Result<()> {
         Some(Command::Build { action }) => builds::run(action),
         Some(Command::Lock(args)) => lock::run(args),
         Some(Command::Unlock) => lock::unlock(),
+        Some(Command::Uninstall(args)) => uninstall::run(args),
     }
 }

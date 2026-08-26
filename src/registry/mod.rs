@@ -24,11 +24,34 @@ pub(crate) struct RegistryEntry {
     pub applied: Vec<String>,
 }
 
+#[cfg(test)]
+static TEST_REGISTRY_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+fn ensure_test_registry_dir() -> PathBuf {
+    TEST_REGISTRY_DIR
+        .get_or_init(|| {
+            let dir = tempfile::TempDir::new().unwrap();
+            dir.keep()
+        })
+        .clone()
+}
+
 pub(crate) fn registry_path() -> Result<PathBuf> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .context("Neither HOME nor USERPROFILE environment variable is set")?;
-    Ok(PathBuf::from(home).join(".gitkit").join("registry.toml"))
+    if let Ok(gitkit_home) = std::env::var("GITKIT_HOME") {
+        return Ok(PathBuf::from(gitkit_home).join("registry.toml"));
+    }
+    #[cfg(test)]
+    {
+        Ok(ensure_test_registry_dir().join("registry.toml"))
+    }
+    #[cfg(not(test))]
+    {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .context("Neither HOME nor USERPROFILE environment variable is set")?;
+        Ok(PathBuf::from(home).join(".gitkit").join("registry.toml"))
+    }
 }
 
 /// Loads the ledger. A missing, empty, or unparseable file yields an empty
@@ -47,7 +70,7 @@ pub(crate) fn load() -> Registry {
 pub(crate) fn save(registry: &Registry) -> Result<()> {
     let path = registry_path()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).context("Failed to create ~/.gitkit directory")?;
+        fs::create_dir_all(parent).context("Failed to create gitkit registry directory")?;
     }
     let content = toml::to_string_pretty(registry).context("Failed to serialize registry")?;
     fs::write(&path, content).context("Failed to write registry")?;
@@ -211,37 +234,69 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    /// Points HOME at a fresh temp dir for the duration of `f`, restoring
-    /// the original value afterward. Never touches the real ~/.gitkit.
-    fn with_temp_home<F: FnOnce(&Path)>(f: F) {
+    /// Provides a clean, isolated registry for tests that need an empty starting state.
+    /// Sets GITKIT_HOME to a unique temp dir, ensuring no interference from other tests.
+    fn with_clean_registry<F: FnOnce()>(f: F) {
         let dir = tempfile::TempDir::new().unwrap();
-        let original = std::env::var("HOME").ok();
+        let orig = std::env::var("GITKIT_HOME").ok();
         unsafe {
-            std::env::set_var("HOME", dir.path());
+            std::env::set_var("GITKIT_HOME", dir.path());
         }
-        f(dir.path());
+        f();
         unsafe {
-            match &original {
-                Some(h) => std::env::set_var("HOME", h),
-                None => std::env::remove_var("HOME"),
+            match &orig {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn registry_path_returns_registry_toml_filename() {
+        let path = registry_path().unwrap();
+        assert_eq!(path.file_name().unwrap(), "registry.toml");
+    }
+
+    #[test]
+    fn registry_path_resolves_under_test_dir_not_real_home() {
+        let path = registry_path().unwrap();
+        let real_home = std::env::var("HOME").unwrap_or_default();
+        let real_gitkit = PathBuf::from(&real_home)
+            .join(".gitkit")
+            .join("registry.toml");
+        assert_ne!(
+            path, real_gitkit,
+            "registry_path() in tests must NOT resolve to the real ~/.gitkit/registry.toml"
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn registry_path_honors_gitkit_home_over_test_default() {
+        let gitkit_home = tempfile::TempDir::new().unwrap();
+        let orig_gitkit_home = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", gitkit_home.path());
+        }
+        let path = registry_path().unwrap();
+        assert!(
+            path.starts_with(gitkit_home.path()),
+            "GITKIT_HOME must take precedence: got {}",
+            path.display()
+        );
+        assert_eq!(path.file_name().unwrap(), "registry.toml");
+        unsafe {
+            match &orig_gitkit_home {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
             }
         }
     }
 
     #[serial]
     #[test]
-    fn registry_path_lives_under_gitkit() {
-        with_temp_home(|_| {
-            let path = registry_path().unwrap();
-            assert!(path.to_string_lossy().contains(".gitkit"));
-            assert_eq!(path.file_name().unwrap(), "registry.toml");
-        });
-    }
-
-    #[serial]
-    #[test]
     fn load_missing_registry_returns_default() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let reg = load();
             assert!(reg.repos.is_empty());
         });
@@ -250,9 +305,8 @@ mod tests {
     #[serial]
     #[test]
     fn load_corrupt_registry_returns_default_not_panic() {
-        with_temp_home(|home| {
-            let dir = home.join(".gitkit");
-            fs::create_dir_all(&dir).unwrap();
+        with_clean_registry(|| {
+            let dir = ensure_test_registry_dir();
             fs::write(dir.join("registry.toml"), "not valid toml {{{").unwrap();
             let reg = load();
             assert!(reg.repos.is_empty());
@@ -262,9 +316,8 @@ mod tests {
     #[serial]
     #[test]
     fn load_empty_registry_returns_default() {
-        with_temp_home(|home| {
-            let dir = home.join(".gitkit");
-            fs::create_dir_all(&dir).unwrap();
+        with_clean_registry(|| {
+            let dir = ensure_test_registry_dir();
             fs::write(dir.join("registry.toml"), "").unwrap();
             let reg = load();
             assert!(reg.repos.is_empty());
@@ -274,7 +327,7 @@ mod tests {
     #[serial]
     #[test]
     fn record_writes_entry_with_absolute_path() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let repo = tempfile::TempDir::new().unwrap();
             record(repo.path(), &["hook:no-secrets".to_string()]).unwrap();
             let reg = load();
@@ -289,7 +342,7 @@ mod tests {
     #[serial]
     #[test]
     fn record_twice_updates_single_entry_not_duplicate() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let repo = tempfile::TempDir::new().unwrap();
             record(repo.path(), &["hook:no-secrets".to_string()]).unwrap();
             record(repo.path(), &["hook:conventional-commits".to_string()]).unwrap();
@@ -307,7 +360,7 @@ mod tests {
     #[serial]
     #[test]
     fn record_same_item_twice_does_not_duplicate_in_list() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let repo = tempfile::TempDir::new().unwrap();
             record(repo.path(), &["hook:no-secrets".to_string()]).unwrap();
             record(repo.path(), &["hook:no-secrets".to_string()]).unwrap();
@@ -328,7 +381,7 @@ mod tests {
     #[serial]
     #[test]
     fn record_empty_items_is_noop() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let repo = tempfile::TempDir::new().unwrap();
             record(repo.path(), &[]).unwrap();
             let reg = load();
@@ -339,22 +392,36 @@ mod tests {
     #[serial]
     #[test]
     fn record_best_effort_swallows_write_failure_without_panic() {
-        with_temp_home(|home| {
-            // Put a plain file where the ~/.gitkit directory would go, so
-            // `fs::create_dir_all` inside `save` fails. `record_best_effort`
-            // must warn and return, never panic or propagate — the actual
-            // caller (a hook install) must not be failed by this.
-            fs::write(home.join(".gitkit"), "not a directory").unwrap();
-            let repo = tempfile::TempDir::new().unwrap();
-            record_best_effort(repo.path(), &["hook:no-secrets".to_string()]);
-            assert!(record(repo.path(), &["hook:no-secrets".to_string()]).is_err());
-        });
+        let blocker = tempfile::TempDir::new().unwrap();
+        let blocker_file = blocker.path().join("blocker");
+        fs::write(&blocker_file, "not a directory").unwrap();
+
+        let orig = std::env::var("GITKIT_HOME").ok();
+        unsafe {
+            std::env::set_var("GITKIT_HOME", &blocker_file);
+        }
+
+        let repo = tempfile::TempDir::new().unwrap();
+        let result = record(repo.path(), &["hook:no-secrets".to_string()]);
+        assert!(
+            result.is_err(),
+            "record must fail when GITKIT_HOME is a file"
+        );
+
+        record_best_effort(repo.path(), &["hook:no-secrets".to_string()]);
+
+        unsafe {
+            match &orig {
+                Some(h) => std::env::set_var("GITKIT_HOME", h),
+                None => std::env::remove_var("GITKIT_HOME"),
+            }
+        }
     }
 
     #[serial]
     #[test]
     fn save_and_load_roundtrip() {
-        with_temp_home(|_| {
+        with_clean_registry(|| {
             let mut reg = Registry::default();
             reg.repos.insert(
                 "/tmp/example".to_string(),
@@ -368,6 +435,43 @@ mod tests {
             let loaded = load();
             assert_eq!(loaded, reg);
         });
+    }
+
+    #[serial]
+    #[test]
+    fn test_suite_does_not_write_to_real_registry() {
+        let real_home = match std::env::var("HOME") {
+            Ok(h) => h,
+            Err(_) => return,
+        };
+        let real_registry = PathBuf::from(&real_home)
+            .join(".gitkit")
+            .join("registry.toml");
+        let real_existed = real_registry.exists();
+        let real_mtime_before = fs::metadata(&real_registry)
+            .ok()
+            .and_then(|m| m.modified().ok());
+
+        let repo = tempfile::TempDir::new().unwrap();
+        crate::registry::record_best_effort(
+            repo.path(),
+            &["hook:test-isolation-check".to_string()],
+        );
+
+        if real_existed {
+            let real_mtime_after = fs::metadata(&real_registry)
+                .ok()
+                .and_then(|m| m.modified().ok());
+            assert_eq!(
+                real_mtime_before, real_mtime_after,
+                "the real ~/.gitkit/registry.toml must not be modified by tests"
+            );
+        } else {
+            assert!(
+                !real_registry.exists(),
+                "the real ~/.gitkit/registry.toml must not be created by tests"
+            );
+        }
     }
 
     // ── civil_from_days / now_timestamp ─────────────────────────────────────
