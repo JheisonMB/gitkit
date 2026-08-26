@@ -132,7 +132,7 @@ fn run_global(prune: bool) -> Result<()> {
             };
 
             match health {
-                HookHealth::Dormant => {
+                HookHealth::Dormant | HookHealth::ModifiedDormant => {
                     any_dormant = true;
                     problems.push(format!(
                         "  ✗ {name} ({hook_file}) — dormant: not executable, git ignores it"
@@ -263,7 +263,7 @@ fn print_hooks(repair: bool) -> Result<bool> {
 
         let health = crate::hooks::classify_hook(&hook_name, &path)?;
 
-        if repair && health == HookHealth::Dormant {
+        if repair && matches!(health, HookHealth::Dormant | HookHealth::ModifiedDormant) {
             crate::hooks::set_executable(&path)?;
             let label = builtin_label(&hook_name, &path);
             println!("  ✓ {label} ({hook_name}) — repaired: set executable, git will now run it");
@@ -280,6 +280,18 @@ fn print_hooks(repair: bool) -> Result<bool> {
                 let label = builtin_label(&hook_name, &path);
                 println!(
                     "  ✗ {label} ({hook_name}) — dormant: not executable, so git ignores it and never runs it (fix with `gitkit status --repair`)"
+                );
+            }
+            HookHealth::ModifiedDormant => {
+                dormant_found = true;
+                let content = fs::read_to_string(&path).unwrap_or_default();
+                let first_cmd = content
+                    .lines()
+                    .find(|l| !l.starts_with('#') && !l.starts_with("set ") && !l.trim().is_empty())
+                    .unwrap_or("(custom)")
+                    .trim();
+                println!(
+                    "  ✗ {hook_name} — dormant: not executable, so git ignores it and never runs it; also modified: {first_cmd:?} (fix with `gitkit status --repair`)"
                 );
             }
             HookHealth::Modified => {
@@ -318,7 +330,7 @@ fn print_dispatcher_parts(hooks_dir: &Path, hook_name: &str, repair: bool) -> Re
         let part_path = crate::hooks::parts_dir(hooks_dir, hook_name).join(&part_name);
         let health = crate::hooks::classify_part(hooks_dir, hook_name, &part_name)?;
 
-        if repair && health == HookHealth::Dormant {
+        if repair && matches!(health, HookHealth::Dormant | HookHealth::ModifiedDormant) {
             crate::hooks::set_executable(&part_path)?;
             println!(
                 "  ✓ {part_name} ({hook_name}) — repaired: set executable, git will now run it"
@@ -332,6 +344,12 @@ fn print_dispatcher_parts(hooks_dir: &Path, hook_name: &str, repair: bool) -> Re
                 dormant_found = true;
                 println!(
                     "  ✗ {part_name} ({hook_name}) — dormant: not executable, so git ignores it and never runs it (fix with `gitkit status --repair`)"
+                );
+            }
+            HookHealth::ModifiedDormant => {
+                dormant_found = true;
+                println!(
+                    "  ✗ {part_name} ({hook_name}) — dormant: not executable, so git ignores it and never runs it; also modified since install (fix with `gitkit status --repair`)"
                 );
             }
             HookHealth::Modified => {
@@ -1233,5 +1251,100 @@ mod tests {
                 "a path that still exists on disk must survive prune even if it is not a repo"
             );
         });
+    }
+
+    // ── GK-J: dormant check for non-executable hooks ────────────────────────
+
+    #[serial]
+    #[test]
+    fn non_executable_modified_hook_is_reported_as_dormant() {
+        let dir = TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let path = hooks_dir.join("pre-push");
+        std::fs::write(&path, "#!/bin/sh\ncargo test\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o644);
+            std::fs::set_permissions(&path, perms).unwrap();
+        }
+
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let dormant_found = print_hooks(false).unwrap();
+        #[cfg(unix)]
+        assert!(
+            dormant_found,
+            "a non-executable modified hook must be reported dormant"
+        );
+        #[cfg(not(unix))]
+        assert!(
+            !dormant_found,
+            "the executable bit does not apply on non-Unix targets"
+        );
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn repair_sets_executable_bit_on_non_executable_modified_hook() {
+        let dir = TempDir::new().unwrap();
+        let hooks_dir = dir.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let path = hooks_dir.join("pre-push");
+        std::fs::write(&path, "#!/bin/sh\ncargo test\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o644);
+            std::fs::set_permissions(&path, perms).unwrap();
+        }
+
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+        let dormant_found = print_hooks(true).unwrap();
+        assert!(!dormant_found, "repair should leave nothing dormant");
+        #[cfg(unix)]
+        assert!(
+            crate::hooks::is_executable(&path).unwrap(),
+            "repair must set the executable bit on a modified hook"
+        );
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[test]
+    fn classify_hook_returns_modified_dormant_for_non_executable_non_builtin() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-push");
+        std::fs::write(&path, "#!/bin/sh\ncargo test\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o644);
+            std::fs::set_permissions(&path, perms).unwrap();
+        }
+        let health = crate::hooks::classify_hook("pre-push", &path).unwrap();
+        #[cfg(unix)]
+        assert_eq!(health, HookHealth::ModifiedDormant);
+        #[cfg(not(unix))]
+        assert_eq!(health, HookHealth::Modified);
+    }
+
+    #[test]
+    fn classify_hook_returns_modified_for_executable_non_builtin() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-push");
+        std::fs::write(&path, "#!/bin/sh\ncargo test\n").unwrap();
+        crate::hooks::set_executable(&path).unwrap();
+        let health = crate::hooks::classify_hook("pre-push", &path).unwrap();
+        assert_eq!(health, HookHealth::Modified);
     }
 }

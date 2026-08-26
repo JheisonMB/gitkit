@@ -324,8 +324,11 @@ fn remove_part(dir: &Path, hook_name: &str, part_name: &str) -> Result<()> {
 
 /// Health of one installed part within `gitkit.d/<hook_name>/`, mirroring
 /// [`classify_hook`]'s categories but also accounting for the dispatcher's
-/// own executable bit — a part stays `Dormant` if the dispatcher that would
-/// run it is itself not executable, since git never even reaches it then.
+/// own executable bit — a part stays `Dormant`/`ModifiedDormant` if the
+/// dispatcher that would run it is itself not executable, since git never
+/// even reaches it then. The execute bit is orthogonal to content: a
+/// non-executable part is dormant regardless of whether its content is
+/// recognized.
 pub(crate) fn classify_part(dir: &Path, hook_name: &str, part_name: &str) -> Result<HookHealth> {
     let part_path = parts_dir(dir, hook_name).join(part_name);
     if !part_path.exists() {
@@ -347,14 +350,13 @@ pub(crate) fn classify_part(dir: &Path, hook_name: &str, part_name: &str) -> Res
         Err(_) => false,
     };
 
-    if !recognized {
-        return Ok(HookHealth::Modified);
-    }
+    let executable = dispatcher_ok && is_executable(&part_path)?;
 
-    if dispatcher_ok && is_executable(&part_path)? {
-        Ok(HookHealth::Active)
-    } else {
-        Ok(HookHealth::Dormant)
+    match (recognized, executable) {
+        (true, true) => Ok(HookHealth::Active),
+        (true, false) => Ok(HookHealth::Dormant),
+        (false, true) => Ok(HookHealth::Modified),
+        (false, false) => Ok(HookHealth::ModifiedDormant),
     }
 }
 
@@ -647,17 +649,22 @@ pub(crate) enum HookHealth {
     /// Present but its content matches no builtin. Not an error: the user
     /// may have edited it deliberately, or it's a custom (non-builtin) hook.
     Modified,
+    /// Content matches no builtin AND the file is not executable — git silently
+    /// ignores it. Both facts are reported: the user must learn it does not run.
+    ModifiedDormant,
     /// No file at this hook's path.
     Absent,
 }
 
 /// Classifies an installed hook file's health for `gitkit status`, by
 /// comparing its content against the builtin catalogue via exact-content
-/// match. A hook with a marker but hand-edited content is `Modified`, not
-/// `Active` — health reporting cares about byte-identical content, not
-/// identity. Reads the file itself rather than trusting a caller-supplied
-/// string, so non-UTF-8 content is classified `Modified` instead of
-/// erroring — git runs a hook regardless of its encoding, so an
+/// match and checking the execute bit. The execute bit is orthogonal to
+/// content: a non-executable hook is dormant regardless of whether its
+/// content matches a builtin, so a hand-edited hook that lost its execute
+/// bit is `ModifiedDormant` — both facts reported, not one.
+/// Reads the file itself rather than trusting a caller-supplied string,
+/// so non-UTF-8 content is classified `Modified`/`ModifiedDormant` instead
+/// of erroring — git runs a hook regardless of its encoding, so an
 /// unreadable-as-text file is not a failure, just content gitkit can't
 /// match against a builtin.
 pub(crate) fn classify_hook(hook_name: &str, path: &Path) -> Result<HookHealth> {
@@ -673,14 +680,13 @@ pub(crate) fn classify_hook(hook_name: &str, path: &Path) -> Result<HookHealth> 
         Err(_) => false,
     };
 
-    if !is_builtin {
-        return Ok(HookHealth::Modified);
-    }
+    let executable = is_executable(path)?;
 
-    if is_executable(path)? {
-        Ok(HookHealth::Active)
-    } else {
-        Ok(HookHealth::Dormant)
+    match (is_builtin, executable) {
+        (true, true) => Ok(HookHealth::Active),
+        (true, false) => Ok(HookHealth::Dormant),
+        (false, true) => Ok(HookHealth::Modified),
+        (false, false) => Ok(HookHealth::ModifiedDormant),
     }
 }
 
