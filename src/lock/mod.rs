@@ -50,6 +50,98 @@ fi
 exit 0
 "#;
 
+/// The pre-rebase hook gitkit installs. Same shape as the commit hook:
+/// checks for `"rebase"` in `operations`, reads the lock file directly,
+/// fails open on any missing/malformed/expired lock, and chains to a
+/// backed-up user hook if any.
+const REBASE_HOOK_SCRIPT: &str = r#"#!/bin/sh
+# Installed by `gitkit lock`. Blocks rebases while a lock is active.
+# See `gitkit lock status` / `gitkit unlock`. Bypass with `git rebase --no-verify`.
+
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+lock_file="$git_dir/gitkit.lock"
+orig_hook="$git_dir/hooks/pre-rebase.gitkit-orig"
+
+if [ -f "$lock_file" ]; then
+  ops=$(sed -n 's/.*"operations":\[\([^]]*\)\].*/\1/p' "$lock_file" 2>/dev/null)
+  if printf '%s' "$ops" | grep -qF '"rebase"'; then
+    expires=$(sed -n 's/.*"expires_at":"\([^"]*\)".*/\1/p' "$lock_file" 2>/dev/null)
+    blocked=1
+    if [ -n "$expires" ]; then
+      now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      if [ "$now" \> "$expires" ]; then
+        blocked=0
+      fi
+    fi
+    if [ "$blocked" -eq 1 ]; then
+      reason=$(sed -n 's/.*"reason":"\([^"]*\)".*/\1/p' "$lock_file" 2>/dev/null)
+      echo "gitkit: rebase blocked - ${reason:-Agent session active}" >&2
+      echo "gitkit: run 'gitkit unlock' to remove the lock, or 'git rebase --no-verify' to bypass it" >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [ -x "$orig_hook" ]; then
+  exec "$orig_hook" "$@"
+fi
+
+exit 0
+"#;
+
+/// The reference-transaction hook gitkit installs with `--refs`. Pure POSIX
+/// `sh`, no dependency on the `gitkit` binary — git calls this on its hot
+/// ref-update path, several times per operation, so spawning a process here
+/// would make ordinary git commands slow. Reads `gitkit.lock` directly.
+///
+/// Rejects updates to `HEAD` and `refs/heads/*` while allowing `refs/remotes/*`
+/// so `git fetch` keeps working. This is the only lock that `--no-verify`
+/// cannot bypass.
+///
+/// Git feeds ref updates on stdin as `<old> <new> <ref>` lines. We read them
+/// all, check each one, and reject the whole transaction if any ref is
+/// protected.
+const REFERENCE_TRANSACTION_HOOK_SCRIPT: &str = r#"#!/bin/sh
+# Installed by `gitkit lock --refs`. Blocks ref updates to HEAD and
+# refs/heads/* while a lock is active. Allows refs/remotes/* so git fetch
+# keeps working. This is the only lock that --no-verify cannot bypass.
+# See `gitkit lock status` / `gitkit unlock`.
+
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+lock_file="$git_dir/gitkit.lock"
+
+if [ ! -f "$lock_file" ]; then
+  exit 0
+fi
+
+ops=$(sed -n 's/.*"operations":\[\([^]]*\)\].*/\1/p' "$lock_file" 2>/dev/null)
+if ! printf '%s' "$ops" | grep -qF '"refs"'; then
+  exit 0
+fi
+
+expires=$(sed -n 's/.*"expires_at":"\([^"]*\)".*/\1/p' "$lock_file" 2>/dev/null)
+if [ -n "$expires" ]; then
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ "$now" \> "$expires" ]; then
+    exit 0
+  fi
+fi
+
+reason=$(sed -n 's/.*"reason":"\([^"]*\)".*/\1/p' "$lock_file" 2>/dev/null)
+
+while read -r old new ref; do
+  case "$ref" in
+    HEAD|refs/heads/*)
+      echo "gitkit: ref update blocked - ${reason:-Agent session active}" >&2
+      echo "gitkit: run 'gitkit unlock' to remove the lock" >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0
+"#;
+
 /// The pre-push hook gitkit installs. Same shape as `LOCK_HOOK_SCRIPT`, but
 /// checks for `"push"` in `operations` instead of `"commit"`. Git feeds ref
 /// update lines on stdin; this hook never inspects them (decides purely from
@@ -113,6 +205,16 @@ const PUSH_HOOK: HookSpec = HookSpec {
     script: PUSH_HOOK_SCRIPT,
 };
 
+const REBASE_HOOK: HookSpec = HookSpec {
+    name: "pre-rebase",
+    script: REBASE_HOOK_SCRIPT,
+};
+
+const REFERENCE_TRANSACTION_HOOK: HookSpec = HookSpec {
+    name: "reference-transaction",
+    script: REFERENCE_TRANSACTION_HOOK_SCRIPT,
+};
+
 #[derive(Args)]
 pub struct LockArgs {
     #[command(subcommand)]
@@ -129,6 +231,11 @@ pub struct LockArgs {
     /// Block both commits and pushes
     #[arg(long)]
     all: bool,
+    /// Block reference updates to HEAD and refs/heads/* (opt-in, never
+    /// included in --all or the default). This is the only lock that
+    /// --no-verify cannot bypass.
+    #[arg(long)]
+    refs: bool,
 }
 
 #[derive(Subcommand)]
@@ -146,20 +253,25 @@ pub fn run(args: LockArgs) -> Result<()> {
     match args.action {
         Some(LockAction::Status { json }) => status(json),
         None => {
-            let ops = target_operations(args.push, args.all);
+            let ops = target_operations(args.push, args.all, args.refs);
             lock(args.timeout.as_deref(), args.reason.as_deref(), &ops)
         }
     }
 }
 
-fn target_operations(push: bool, all: bool) -> Vec<&'static str> {
-    if all {
+fn target_operations(push: bool, all: bool, refs: bool) -> Vec<&'static str> {
+    let mut ops = if all {
         vec!["commit", "push"]
     } else if push {
         vec!["push"]
     } else {
         vec!["commit"]
+    };
+    ops.push("rebase");
+    if refs {
+        ops.push("refs");
     }
+    ops
 }
 
 pub fn unlock() -> Result<()> {
@@ -170,6 +282,8 @@ pub fn unlock() -> Result<()> {
     }
     uninstall_hook(&COMMIT_HOOK)?;
     uninstall_hook(&PUSH_HOOK)?;
+    uninstall_hook(&REBASE_HOOK)?;
+    uninstall_hook(&REFERENCE_TRANSACTION_HOOK)?;
     println!("Unlocked. Commits and pushes are no longer blocked by gitkit.");
     Ok(())
 }
@@ -225,6 +339,13 @@ fn lock(timeout: Option<&str>, reason: Option<&str>, ops: &[&str]) -> Result<()>
     }
     if lf.operations.iter().any(|op| op == "push") {
         install_hook(&PUSH_HOOK).context("Failed to install pre-push hook")?;
+    }
+    if lf.operations.iter().any(|op| op == "rebase") {
+        install_hook(&REBASE_HOOK).context("Failed to install pre-rebase hook")?;
+    }
+    if lf.operations.iter().any(|op| op == "refs") {
+        install_hook(&REFERENCE_TRANSACTION_HOOK)
+            .context("Failed to install reference-transaction hook")?;
     }
 
     println!("Locked: {}", lf.reason);
@@ -343,6 +464,8 @@ fn status_report(lf: &LockFile, now: &str) -> Vec<String> {
 
     let commit_locked = !expired && lf.operations.iter().any(|op| op == "commit");
     let push_locked = !expired && lf.operations.iter().any(|op| op == "push");
+    let rebase_locked = !expired && lf.operations.iter().any(|op| op == "rebase");
+    let refs_locked = !expired && lf.operations.iter().any(|op| op == "refs");
     lines.push(format!(
         "Commit: {}",
         if commit_locked {
@@ -354,6 +477,18 @@ fn status_report(lf: &LockFile, now: &str) -> Vec<String> {
     lines.push(format!(
         "Push: {}",
         if push_locked { "locked" } else { "not locked" }
+    ));
+    lines.push(format!(
+        "Rebase: {}",
+        if rebase_locked {
+            "locked"
+        } else {
+            "not locked"
+        }
+    ));
+    lines.push(format!(
+        "Refs: {}",
+        if refs_locked { "locked" } else { "not locked" }
     ));
     lines
 }
@@ -1305,6 +1440,7 @@ mod tests {
             reason: None,
             push: false,
             all: false,
+            refs: false,
         });
         assert!(result.is_ok());
 
@@ -1327,6 +1463,7 @@ mod tests {
             reason: Some("ci".to_string()),
             push: false,
             all: false,
+            refs: false,
         });
         assert!(result.is_ok());
         assert!(dir.path().join(".git").join(LOCK_FILE_NAME).exists());
@@ -1350,11 +1487,12 @@ mod tests {
             reason: None,
             push: true,
             all: false,
+            refs: false,
         });
         assert!(result.is_ok());
         let content =
             std::fs::read_to_string(dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
-        assert!(content.contains("\"operations\":[\"push\"]"));
+        assert!(content.contains("\"operations\":[\"push\",\"rebase\"]"));
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1375,11 +1513,12 @@ mod tests {
             reason: None,
             push: false,
             all: true,
+            refs: false,
         });
         assert!(result.is_ok());
         let content =
             std::fs::read_to_string(dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
-        assert!(content.contains("\"operations\":[\"commit\",\"push\"]"));
+        assert!(content.contains("\"operations\":[\"commit\",\"push\",\"rebase\"]"));
 
         if let Some(orig) = original {
             let _ = std::env::set_current_dir(orig);
@@ -1389,18 +1528,43 @@ mod tests {
     // ── target_operations ────────────────────────────────────────────────────
 
     #[test]
-    fn target_operations_defaults_to_commit() {
-        assert_eq!(target_operations(false, false), vec!["commit"]);
+    fn target_operations_defaults_to_commit_and_rebase() {
+        assert_eq!(
+            target_operations(false, false, false),
+            vec!["commit", "rebase"]
+        );
     }
 
     #[test]
-    fn target_operations_push_flag_locks_push_only() {
-        assert_eq!(target_operations(true, false), vec!["push"]);
+    fn target_operations_push_flag_locks_push_and_rebase() {
+        assert_eq!(
+            target_operations(true, false, false),
+            vec!["push", "rebase"]
+        );
     }
 
     #[test]
-    fn target_operations_all_flag_locks_both() {
-        assert_eq!(target_operations(false, true), vec!["commit", "push"]);
+    fn target_operations_all_flag_locks_commit_push_and_rebase() {
+        assert_eq!(
+            target_operations(false, true, false),
+            vec!["commit", "push", "rebase"]
+        );
+    }
+
+    #[test]
+    fn target_operations_refs_flag_adds_refs() {
+        assert_eq!(
+            target_operations(false, false, true),
+            vec!["commit", "rebase", "refs"]
+        );
+    }
+
+    #[test]
+    fn target_operations_all_with_refs_does_not_duplicate() {
+        assert_eq!(
+            target_operations(false, true, true),
+            vec!["commit", "push", "rebase", "refs"]
+        );
     }
 
     // ── status_report() per-operation reporting ──────────────────────────────
@@ -1683,5 +1847,222 @@ mod tests {
             operations: vec![op.to_string()],
         };
         std::fs::write(path, lf.to_json()).unwrap();
+    }
+
+    // ── rebase hook script sanity ────────────────────────────────────────────
+
+    #[test]
+    fn rebase_hook_script_is_valid_shell_shebang() {
+        assert!(REBASE_HOOK_SCRIPT.starts_with("#!/bin/sh"));
+    }
+
+    #[test]
+    fn rebase_hook_script_references_lock_file_and_backup() {
+        assert!(REBASE_HOOK_SCRIPT.contains("gitkit.lock"));
+        assert!(REBASE_HOOK_SCRIPT.contains("pre-rebase.gitkit-orig"));
+        assert!(REBASE_HOOK_SCRIPT.contains("--no-verify"));
+        assert!(REBASE_HOOK_SCRIPT.contains("\"rebase\""));
+    }
+
+    // ── reference-transaction hook script sanity ─────────────────────────────
+
+    #[test]
+    fn reference_transaction_hook_script_is_valid_shell_shebang() {
+        assert!(REFERENCE_TRANSACTION_HOOK_SCRIPT.starts_with("#!/bin/sh"));
+    }
+
+    #[test]
+    fn reference_transaction_hook_script_does_not_invoke_gitkit_binary() {
+        assert!(
+            !REFERENCE_TRANSACTION_HOOK_SCRIPT.contains("$(gitkit"),
+            "reference-transaction hook must not spawn the gitkit binary"
+        );
+        assert!(
+            !REFERENCE_TRANSACTION_HOOK_SCRIPT.contains("exec gitkit"),
+            "reference-transaction hook must not exec the gitkit binary"
+        );
+    }
+
+    #[test]
+    fn reference_transaction_hook_script_rejects_head_and_refs_heads() {
+        assert!(REFERENCE_TRANSACTION_HOOK_SCRIPT.contains("HEAD|refs/heads/*"));
+    }
+
+    #[test]
+    fn reference_transaction_hook_script_mentions_gitkit_unlock() {
+        assert!(REFERENCE_TRANSACTION_HOOK_SCRIPT.contains("gitkit unlock"));
+    }
+
+    // ── status_report with rebase and refs axes ──────────────────────────────
+
+    #[test]
+    fn status_report_shows_rebase_and_refs_axes() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+            reason: "agent session".to_string(),
+            operations: vec![
+                "commit".to_string(),
+                "push".to_string(),
+                "rebase".to_string(),
+                "refs".to_string(),
+            ],
+        };
+        let lines = status_report(&lf, "2026-01-01T00:05:00Z").join("\n");
+        assert!(lines.contains("Commit: locked"), "status was: {lines}");
+        assert!(lines.contains("Push: locked"), "status was: {lines}");
+        assert!(lines.contains("Rebase: locked"), "status was: {lines}");
+        assert!(lines.contains("Refs: locked"), "status was: {lines}");
+    }
+
+    #[test]
+    fn status_report_shows_rebase_and_refs_not_locked_when_absent() {
+        let lf = LockFile {
+            locked_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+            reason: "agent session".to_string(),
+            operations: vec!["commit".to_string()],
+        };
+        let lines = status_report(&lf, "2026-01-01T00:05:00Z").join("\n");
+        assert!(lines.contains("Rebase: not locked"), "status was: {lines}");
+        assert!(lines.contains("Refs: not locked"), "status was: {lines}");
+    }
+
+    // ── lock with refs installs reference-transaction hook ───────────────────
+
+    #[serial]
+    #[test]
+    fn lock_with_refs_installs_reference_transaction_hook() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        lock(None, None, &["refs"]).unwrap();
+
+        let content =
+            std::fs::read_to_string(dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
+        assert!(content.contains("\"operations\":[\"refs\"]"));
+        assert!(dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("reference-transaction")
+            .exists());
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn lock_with_rebase_installs_pre_rebase_hook() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        lock(None, None, &["rebase"]).unwrap();
+
+        let content =
+            std::fs::read_to_string(dir.path().join(".git").join(LOCK_FILE_NAME)).unwrap();
+        assert!(content.contains("\"operations\":[\"rebase\"]"));
+        assert!(dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("pre-rebase")
+            .exists());
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn unlock_removes_reference_transaction_hook() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        lock(None, None, &["refs"]).unwrap();
+        assert!(dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("reference-transaction")
+            .exists());
+
+        unlock().unwrap();
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("reference-transaction")
+            .exists());
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn unlock_removes_pre_rebase_hook() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        lock(None, None, &["rebase"]).unwrap();
+        assert!(dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("pre-rebase")
+            .exists());
+
+        unlock().unwrap();
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("pre-rebase")
+            .exists());
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn lock_with_commit_only_does_not_install_rebase_or_refs_hooks() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let original = std::env::current_dir().ok();
+        let _ = std::env::set_current_dir(dir.path());
+
+        lock(None, None, &["commit"]).unwrap();
+
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("pre-rebase")
+            .exists());
+        assert!(!dir
+            .path()
+            .join(".git")
+            .join("hooks")
+            .join("reference-transaction")
+            .exists());
+
+        if let Some(orig) = original {
+            let _ = std::env::set_current_dir(orig);
+        }
     }
 }

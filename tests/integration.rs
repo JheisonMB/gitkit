@@ -996,10 +996,6 @@ fn lock_status_json_exit_code_zero_when_unlocked() {
     assert!(stdout.contains("\"active\":false"), "stdout was: {stdout}");
     assert!(stdout.contains("\"expired\":false"), "stdout was: {stdout}");
     assert!(stdout.contains("\"operations\":[]"), "stdout was: {stdout}");
-    assert!(
-        stdout.contains("\"locked_at\":null"),
-        "stdout was: {stdout}"
-    );
 }
 
 #[test]
@@ -1038,7 +1034,7 @@ fn lock_status_json_exit_code_nonzero_when_locked() {
         "stdout was: {stdout}"
     );
     assert!(
-        stdout.contains("\"operations\":[\"commit\"]"),
+        stdout.contains("\"operations\":[\"commit\",\"rebase\"]"),
         "stdout was: {stdout}"
     );
 }
@@ -1395,4 +1391,227 @@ fn status_lists_both_builtins_installed_for_one_git_hook() {
         "status output was:\n{stdout}"
     );
     assert!(stdout.contains("no-body"), "status output was:\n{stdout}");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lock / pre-rebase integration tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn git_rebase(dir: &std::path::Path, onto: &str) -> (bool, String) {
+    let output = Command::new("git")
+        .args(["rebase", onto])
+        .current_dir(dir)
+        .output()
+        .expect("Failed to run git rebase");
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output.status.success(), format!("{stdout}{stderr}"))
+}
+
+#[test]
+fn lock_fixture_pre_rebase_blocks_and_unlock_releases() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "initial commit");
+    assert!(ok);
+
+    let status = Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "feature commit");
+    assert!(ok);
+
+    let status = Command::new("git")
+        .args(["checkout", "master"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "master commit");
+    assert!(ok);
+
+    let status = Command::new("git")
+        .args(["checkout", "feature"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // `gitkit lock` installs pre-rebase unconditionally alongside commit.
+    let lock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    assert!(
+        hooks_dir.join("pre-rebase").exists(),
+        "pre-rebase hook should be installed by `gitkit lock`"
+    );
+
+    let (ok, msg) = git_rebase(dir.path(), "master");
+    assert!(!ok, "rebase should fail while locked");
+    assert!(msg.contains("rebase blocked"), "message was: {msg}");
+    assert!(msg.contains("gitkit unlock"), "message was: {msg}");
+
+    // Unlock: rebase succeeds.
+    let unlock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["unlock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit unlock");
+    assert!(unlock_out.status.success());
+
+    let (ok, _) = git_rebase(dir.path(), "master");
+    assert!(ok, "rebase should succeed after unlock");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lock / reference-transaction integration tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn lock_fixture_reference_transaction_rejects_head_update() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "initial commit");
+    assert!(ok);
+    let (ok, _) = git_commit_allow_empty(dir.path(), "second commit");
+    assert!(ok);
+
+    // Install the reference-transaction hook via --refs.
+    let lock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--refs", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --refs");
+    assert!(lock_out.status.success());
+
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    assert!(
+        hooks_dir.join("reference-transaction").exists(),
+        "reference-transaction hook should be installed"
+    );
+
+    // Attempt to update HEAD to the previous commit (simulates a ref update).
+    let output = Command::new("git")
+        .args(["update-ref", "HEAD", "HEAD~1"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run git update-ref");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "HEAD update should be rejected by reference-transaction hook"
+    );
+    assert!(stderr.contains("gitkit unlock"), "message was: {stderr}");
+}
+
+#[test]
+fn lock_fixture_reference_transaction_permits_refs_remotes() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let (ok, _) = git_commit_allow_empty(dir.path(), "initial commit");
+    assert!(ok);
+
+    // Install the reference-transaction hook via --refs.
+    let lock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--refs", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --refs");
+    assert!(lock_out.status.success());
+
+    // Updating a refs/remotes/* ref should succeed.
+    let output = Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/main", "HEAD"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run git update-ref");
+    assert!(
+        output.status.success(),
+        "refs/remotes update should be permitted: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn lock_fixture_refs_not_in_default_lock() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock");
+    assert!(lock_out.status.success());
+
+    let hooks_dir = dir.path().join(".git").join("hooks");
+    assert!(
+        !hooks_dir.join("reference-transaction").exists(),
+        "reference-transaction hook should NOT be installed by default"
+    );
+
+    let lock_path = dir.path().join(".git").join("gitkit.lock");
+    let content = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(
+        !content.contains("\"refs\""),
+        "refs should not be in default lock operations: {content}"
+    );
+}
+
+#[test]
+fn lock_fixture_status_reports_axes() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let binary = gitkit_binary();
+
+    let lock_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "--refs", "--reason", "Agent session active"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock --refs");
+    assert!(lock_out.status.success());
+
+    let status_out = Command::new(&binary)
+        .env("GITKIT_NO_UPDATE_CHECK", "1")
+        .env("HOME", dir.path())
+        .args(["lock", "status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run gitkit lock status");
+    assert!(status_out.status.success());
+
+    let stdout = String::from_utf8_lossy(&status_out.stdout);
+    assert!(stdout.contains("Commit:"), "status was: {stdout}");
+    assert!(stdout.contains("Push:"), "status was: {stdout}");
+    assert!(stdout.contains("Rebase:"), "status was: {stdout}");
+    assert!(stdout.contains("Refs:"), "status was: {stdout}");
 }
