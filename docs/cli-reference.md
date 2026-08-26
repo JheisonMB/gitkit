@@ -53,6 +53,20 @@ Running `gitkit` with no command starts the interactive wizard.
 `git commit --no-verify` and `git push --no-verify` bypass the lock — see [Lock](lock.md) for why
 that is accepted rather than defended against.
 
+## Uninstall
+
+| Command | Description |
+|---|---|
+| `gitkit uninstall` | Remove gitkit hooks from every repository it has touched |
+| `gitkit uninstall --data` | Also remove local state under `~/.gitkit` (builds, registry) |
+| `gitkit uninstall --yes` | Skip the confirmation prompt |
+| `gitkit uninstall --dry-run` | Print what would be done without changing anything |
+
+By default, `gitkit uninstall` lists every repository in the registry, shows what hooks are
+installed, and asks for confirmation before removing anything. It restores any hand-written hook
+that gitkit had absorbed when it first installed its dispatcher. The gitkit binary itself is never
+removed — see [Installation](installation.md#uninstall) for how to remove it.
+
 ## Ignore
 
 | Command | Description |
